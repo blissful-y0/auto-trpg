@@ -17,6 +17,21 @@ function optionalEnv(key: string, defaultValue: string): string {
   return process.env[key] || defaultValue;
 }
 
+function getEncryptionSecret(): string {
+  const nodeEnv = process.env.NODE_ENV || 'development';
+  const secret = process.env.ENCRYPTION_SECRET;
+
+  if (nodeEnv === 'production' && !secret) {
+    throw new Error(
+      'ENCRYPTION_SECRET must be set in production environment. ' +
+        'This is a required security configuration.',
+    );
+  }
+
+  // Safe fallback only in development
+  return secret || 'dev-secret-change-in-production';
+}
+
 export const config = {
   port: parseInt(optionalEnv('PORT', '3001'), 10),
   nodeEnv: optionalEnv('NODE_ENV', 'development'),
@@ -39,7 +54,7 @@ export const config = {
   },
 
   encryption: {
-    secret: optionalEnv('ENCRYPTION_SECRET', 'dev-secret-change-in-production'),
+    secret: getEncryptionSecret(),
   },
 
   cors: {
