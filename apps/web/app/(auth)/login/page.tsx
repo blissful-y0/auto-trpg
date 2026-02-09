@@ -1,19 +1,35 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { createClient } from '@/lib/supabase/client';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const router = useRouter();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    // TODO: Supabase 인증 연동
-    console.log('로그인 시도:', email);
-    setLoading(false);
+    setError('');
+
+    const supabase = createClient();
+    const { error: authError } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (authError) {
+      setError(authError.message);
+      setLoading(false);
+      return;
+    }
+
+    router.push('/dashboard');
   };
 
   return (
@@ -53,6 +69,10 @@ export default function LoginPage() {
             required
           />
         </div>
+
+        {error && (
+          <p className="text-red-400 text-sm">{error}</p>
+        )}
 
         <button
           type="submit"

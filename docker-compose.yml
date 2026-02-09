@@ -1,34 +1,9 @@
 version: "3.8"
 
+# Supabase는 `supabase start`로 관리 (CLI)
+# 이 파일은 Redis만 관리
+
 services:
-  supabase-db:
-    image: supabase/postgres:15.6.1.143
-    ports:
-      - "54322:5432"
-    environment:
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: auto_trpg
-    volumes:
-      - supabase-db-data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
-  supabase-studio:
-    image: supabase/studio:20241202-71e5240
-    ports:
-      - "54323:3000"
-    environment:
-      STUDIO_PG_META_URL: http://supabase-meta:8080
-      SUPABASE_URL: http://supabase-kong:8000
-      SUPABASE_REST_URL: http://supabase-kong:8000/rest/v1/
-      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:-***SUPABASE_ANON_KEY_REMOVED***}
-      SUPABASE_SERVICE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-***SUPABASE_SERVICE_KEY_REMOVED***}
-    depends_on:
-      - supabase-db
-
   redis:
     image: redis:7-alpine
     ports:
@@ -43,5 +18,4 @@ services:
       retries: 5
 
 volumes:
-  supabase-db-data:
   redis-data:

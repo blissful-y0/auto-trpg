@@ -1,7 +1,9 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { createClient } from '@/lib/supabase/client';
 
 export default function SignupPage() {
   const [email, setEmail] = useState('');
@@ -9,17 +11,35 @@ export default function SignupPage() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [nickname, setNickname] = useState('');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const router = useRouter();
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     if (password !== confirmPassword) {
-      alert('비밀번호가 일치하지 않습니다.');
+      setError('비밀번호가 일치하지 않습니다.');
       return;
     }
     setLoading(true);
-    // TODO: Supabase 인증 연동
-    console.log('회원가입 시도:', email, nickname);
-    setLoading(false);
+    setError('');
+
+    const supabase = createClient();
+    const { error: authError } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: { display_name: nickname },
+      },
+    });
+
+    if (authError) {
+      setError(authError.message);
+      setLoading(false);
+      return;
+    }
+
+    // 로컬 Supabase는 이메일 인증 없이 바로 로그인됨
+    router.push('/dashboard');
   };
 
   return (
@@ -97,6 +117,10 @@ export default function SignupPage() {
             required
           />
         </div>
+
+        {error && (
+          <p className="text-red-400 text-sm">{error}</p>
+        )}
 
         <button
           type="submit"

@@ -30,14 +30,15 @@ CREATE POLICY "본인 프로필 수정" ON profiles FOR UPDATE USING (auth.uid()
 CREATE POLICY "프로필 생성" ON profiles FOR INSERT WITH CHECK (auth.uid() = id);
 
 -- 사용자 생성 시 프로필 자동 생성 트리거
+-- search_path를 명시적으로 설정해야 supabase_auth_admin 컨텍스트에서도 public 스키마를 찾을 수 있음
 CREATE OR REPLACE FUNCTION handle_new_user()
 RETURNS TRIGGER AS $$
 BEGIN
-  INSERT INTO profiles (id, username, display_name)
+  INSERT INTO public.profiles (id, username, display_name)
   VALUES (NEW.id, NEW.email, split_part(NEW.email, '@', 1));
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
 CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
