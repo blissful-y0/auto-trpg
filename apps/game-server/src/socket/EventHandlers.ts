@@ -23,6 +23,41 @@ import type { GameSessionInfo, CharacterInfo } from '../services/context/Context
 type TypedServer = Server<ClientEvents, ServerEvents, Record<string, never>, SocketData>;
 type TypedSocket = Socket<ClientEvents, ServerEvents, Record<string, never>, SocketData>;
 
+/** DB-backed: session_participants에서 세션 멤버 여부 확인 */
+export async function isSessionMember(sessionId: string, userId: string): Promise<boolean> {
+  const { data, error } = await supabaseAdmin
+    .from('session_participants')
+    .select('id')
+    .eq('session_id', sessionId)
+    .eq('user_id', userId)
+    .single();
+
+  return !error && !!data;
+}
+
+/** DB-backed: game_sessions.created_by로 세션 생성자(GM) 여부 확인 */
+export async function isSessionCreator(sessionId: string, userId: string): Promise<boolean> {
+  const { data, error } = await supabaseAdmin
+    .from('game_sessions')
+    .select('created_by')
+    .eq('id', sessionId)
+    .single();
+
+  return !error && !!data && data.created_by === userId;
+}
+
+// roomManager에 이미 있으면 DB 조회 생략, 없으면 DB 체크
+async function requireSessionMembership(
+  sessionId: string,
+  userId: string,
+  roomManager: RoomManager,
+): Promise<boolean> {
+  if (roomManager.isPlayerInRoom(userId, sessionId)) {
+    return true;
+  }
+  return isSessionMember(sessionId, userId);
+}
+
 // 주사위 굴림 헬퍼
 function rollDice(sides: number): number {
   return Math.floor(Math.random() * sides) + 1;
@@ -88,17 +123,13 @@ async function processWithGameEngine(
   // GameEngine 생성 및 액션 처리
   const engine = await createGameEngineForSession(sessionId, userId);
 
-  return engine.processAction(
-    toSessionInfo(session),
-    toCharacterInfos(characters || []),
-    {
-      sessionId,
-      characterId: characterId || '',
-      userId,
-      message,
-      isOOC: false,
-    },
-  );
+  return engine.processAction(toSessionInfo(session), toCharacterInfos(characters || []), {
+    sessionId,
+    characterId: characterId || '',
+    userId,
+    message,
+    isOOC: false,
+  });
 }
 
 // 이벤트 핸들러 등록
@@ -110,14 +141,27 @@ export function registerHandlers(
 ): void {
   const user = socket.data.user;
 
-  // player:join — 세션 참가
-  socket.on('player:join', (payload: PlayerJoinPayload) => {
+  // player:join — 세션 참가 (DB 멤버십 검증)
+  socket.on('player:join', async (payload: PlayerJoinPayload) => {
     try {
       const { sessionId, characterId } = payload;
+
+      const isMember = await isSessionMember(sessionId, user.userId);
+      if (!isMember) {
+        socket.emit('error', {
+          code: 'FORBIDDEN',
+          message: '이 세션에 참가할 권한이 없습니다.',
+        });
+        return;
+      }
+
       const result = roomManager.joinRoom(socket.id, sessionId, user.userId, characterId);
 
       if (!result.success) {
-        socket.emit('error', { code: 'ROOM_FULL', message: result.error ?? '참가에 실패했습니다.' });
+        socket.emit('error', {
+          code: 'ROOM_FULL',
+          message: result.error ?? '참가에 실패했습니다.',
+        });
         return;
       }
 
@@ -160,9 +204,18 @@ export function registerHandlers(
     }
   });
 
-  // player:action — 플레이어 액션 (GameEngine 연동)
-  socket.on('player:action', (payload: PlayerActionPayload) => {
+  // player:action — 플레이어 액션 (세션 멤버십 검증 후 GameEngine 연동)
+  socket.on('player:action', async (payload: PlayerActionPayload) => {
     const { sessionId, message, characterId } = payload;
+
+    const authorized = await requireSessionMembership(sessionId, user.userId, roomManager);
+    if (!authorized) {
+      socket.emit('error', {
+        code: 'FORBIDDEN',
+        message: '이 세션에서 액션을 수행할 권한이 없습니다.',
+      });
+      return;
+    }
 
     actionQueue
       .enqueue(sessionId, async () => {
@@ -203,7 +256,7 @@ export function registerHandlers(
               sceneTransition: response.sceneTransition,
             },
           })
-          .then(({ error: dbErr }) => {
+          .then(({ error: dbErr }: { error: { message: string } | null }) => {
             if (dbErr) console.error('GM 메시지 저장 실패:', dbErr.message);
           });
       })
@@ -215,10 +268,20 @@ export function registerHandlers(
       });
   });
 
-  // dice:roll — 주사위 굴림
-  socket.on('dice:roll', (payload: DiceRollPayload) => {
+  // dice:roll — 주사위 굴림 (세션 멤버십 검증)
+  socket.on('dice:roll', async (payload: DiceRollPayload) => {
     try {
       const { sessionId, dice, count, modifier, reason } = payload;
+
+      const authorized = await requireSessionMembership(sessionId, user.userId, roomManager);
+      if (!authorized) {
+        socket.emit('error', {
+          code: 'FORBIDDEN',
+          message: '이 세션에서 주사위를 굴릴 권한이 없습니다.',
+        });
+        return;
+      }
+
       const sides = parseDiceSides(dice);
       const rollCount = Math.min(Math.max(count, 1), 100); // 1~100개 제한
 
@@ -248,10 +311,16 @@ export function registerHandlers(
     }
   });
 
-  // chat:message — 채팅 메시지
-  socket.on('chat:message', (payload: ChatMessagePayload) => {
+  // chat:message — 채팅 메시지 (세션 멤버십 검증)
+  socket.on('chat:message', async (payload: ChatMessagePayload) => {
     try {
       const { sessionId, content, isOOC } = payload;
+
+      const authorized = await requireSessionMembership(sessionId, user.userId, roomManager);
+      if (!authorized) {
+        socket.emit('error', { code: 'FORBIDDEN', message: '이 세션에서 채팅할 권한이 없습니다.' });
+        return;
+      }
 
       if (isOOC) {
         // OOC 메시지: 단순 채팅 중계 (GM 개입 없음)
@@ -292,7 +361,7 @@ export function registerHandlers(
                   diceRolls: response.diceRolls,
                 },
               })
-              .then(({ error: dbErr }) => {
+              .then(({ error: dbErr }: { error: { message: string } | null }) => {
                 if (dbErr) console.error('GM 메시지 저장 실패:', dbErr.message);
               });
           })
@@ -311,10 +380,19 @@ export function registerHandlers(
     }
   });
 
-  // game:start — 게임 시작
-  socket.on('game:start', (payload: GameStartPayload) => {
+  // game:start — 게임 시작 (세션 생성자/GM만 허용)
+  socket.on('game:start', async (payload: GameStartPayload) => {
     try {
       const { sessionId } = payload;
+
+      const isCreator = await isSessionCreator(sessionId, user.userId);
+      if (!isCreator) {
+        socket.emit('error', {
+          code: 'FORBIDDEN',
+          message: '게임을 시작할 권한이 없습니다. 세션 생성자만 시작할 수 있습니다.',
+        });
+        return;
+      }
 
       // 게임 상태 업데이트 브로드캐스트
       io.to(sessionId).emit('game:stateUpdate', {
@@ -329,10 +407,19 @@ export function registerHandlers(
     }
   });
 
-  // combat:action — 전투 액션 (GameEngine으로 전달)
-  socket.on('combat:action', (payload: CombatActionPayload) => {
+  // combat:action — 전투 액션 (세션 멤버십 검증 후 GameEngine으로 전달)
+  socket.on('combat:action', async (payload: CombatActionPayload) => {
     try {
       const { sessionId, action } = payload;
+
+      const authorized = await requireSessionMembership(sessionId, user.userId, roomManager);
+      if (!authorized) {
+        socket.emit('error', {
+          code: 'FORBIDDEN',
+          message: '이 세션에서 전투 액션을 수행할 권한이 없습니다.',
+        });
+        return;
+      }
 
       // 전투 액션을 GameEngine으로 전달
       actionQueue
