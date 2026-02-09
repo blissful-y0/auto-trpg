@@ -1,57 +1,39 @@
 'use client';
 
-// Mock 전투 데이터
-const mockCombatants = [
-  {
-    id: '1',
-    name: '아라곤',
-    initiative: 18,
-    hp: { current: 24, max: 30 },
-    ac: 15,
-    isPlayer: true,
-    isCurrentTurn: true,
-  },
-  {
-    id: '2',
-    name: '고블린 A',
-    initiative: 15,
-    hp: { current: 5, max: 7 },
-    ac: 13,
-    isPlayer: false,
-    isCurrentTurn: false,
-  },
-  {
-    id: '3',
-    name: '레고라스',
-    initiative: 14,
-    hp: { current: 22, max: 22 },
-    ac: 14,
-    isPlayer: true,
-    isCurrentTurn: false,
-  },
-  {
-    id: '4',
-    name: '고블린 B',
-    initiative: 12,
-    hp: { current: 0, max: 7 },
-    ac: 13,
-    isPlayer: false,
-    isCurrentTurn: false,
-  },
-  {
-    id: '5',
-    name: '김리',
-    initiative: 8,
-    hp: { current: 30, max: 35 },
-    ac: 17,
-    isPlayer: true,
-    isCurrentTurn: false,
-  },
-];
+import { useGameStore } from '@/lib/stores/gameStore';
+
+// 상태이상 한글 매핑
+const CONDITION_ICONS: Record<string, string> = {
+  blinded: '실명',
+  charmed: '매혹',
+  deafened: '청각상실',
+  exhaustion: '피로',
+  frightened: '공포',
+  grappled: '잡기',
+  incapacitated: '무력화',
+  invisible: '투명',
+  paralyzed: '마비',
+  petrified: '석화',
+  poisoned: '중독',
+  prone: '엎드림',
+  restrained: '속박',
+  stunned: '기절',
+  unconscious: '의식불명',
+};
 
 export default function CombatTracker() {
-  const round = 2;
-  const combatants = mockCombatants;
+  const { isInCombat, combatants, currentRound } = useGameStore();
+
+  if (!isInCombat || combatants.length === 0) {
+    return (
+      <div className="p-4 text-center">
+        <p className="text-sm text-slate-500">현재 전투 중이 아닙니다.</p>
+        <p className="text-xs text-slate-600 mt-1">
+          전투가 시작되면 여기에 표시됩니다.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="p-4 space-y-4">
@@ -59,7 +41,7 @@ export default function CombatTracker() {
       <div className="flex items-center justify-between">
         <h4 className="text-sm font-medium text-slate-300">전투 트래커</h4>
         <span className="text-xs px-2 py-1 bg-red-500/20 text-red-400 rounded-full">
-          라운드 {round}
+          라운드 {currentRound}
         </span>
       </div>
 
@@ -67,13 +49,16 @@ export default function CombatTracker() {
       <div className="space-y-1">
         {combatants.map((c) => {
           const isDead = c.hp.current <= 0;
-          const hpPercent = (c.hp.current / c.hp.max) * 100;
+          const hpPercent = c.hp.max > 0 ? (c.hp.current / c.hp.max) * 100 : 0;
           const hpColor =
             hpPercent > 50
               ? 'bg-green-500'
               : hpPercent > 25
                 ? 'bg-yellow-500'
                 : 'bg-red-500';
+
+          // 상태이상 태그 (conditions가 있는 경우)
+          const conditions = (c as { conditions?: string[] }).conditions ?? [];
 
           return (
             <div
@@ -98,7 +83,7 @@ export default function CombatTracker() {
                 {c.initiative}
               </span>
 
-              {/* 이름 */}
+              {/* 이름 + 상태이상 */}
               <div className="flex-1 min-w-0">
                 <span
                   className={`text-sm ${
@@ -107,13 +92,28 @@ export default function CombatTracker() {
                 >
                   {c.name}
                 </span>
+
+                {/* 상태이상 태그 */}
+                {conditions.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-0.5">
+                    {conditions.map((cond: string) => (
+                      <span
+                        key={cond}
+                        className="text-[10px] px-1 py-0.5 bg-purple-500/20 text-purple-400 rounded"
+                        title={CONDITION_ICONS[cond] ?? cond}
+                      >
+                        {CONDITION_ICONS[cond] ?? cond}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
 
-              {/* HP 미니 바 */}
+              {/* HP 바 */}
               <div className="w-20">
                 <div className="h-1.5 rounded-full bg-slate-600 overflow-hidden">
                   <div
-                    className={`h-full rounded-full ${isDead ? 'bg-slate-500' : hpColor}`}
+                    className={`h-full rounded-full transition-all duration-300 ${isDead ? 'bg-slate-500' : hpColor}`}
                     style={{ width: `${Math.max(hpPercent, 0)}%` }}
                   />
                 </div>
@@ -130,11 +130,6 @@ export default function CombatTracker() {
           );
         })}
       </div>
-
-      {/* Phase 2 연동 안내 */}
-      <p className="text-xs text-slate-500 text-center">
-        전투 자동화는 Phase 2에서 지원됩니다
-      </p>
     </div>
   );
 }
