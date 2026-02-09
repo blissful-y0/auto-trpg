@@ -2,6 +2,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { supabaseAdmin } from '../lib/supabase';
 import { AppError } from '../middleware/errorHandler';
+import { assertSessionParticipant } from '../lib/authorization';
 
 const router = Router();
 
@@ -85,7 +86,7 @@ router.post(
     } catch (err) {
       next(err);
     }
-  }
+  },
 );
 
 // GET /api/sessions/:sessionId/characters — 세션 캐릭터 목록
@@ -94,6 +95,10 @@ router.get(
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { sessionId } = req.params;
+      const userId = req.user!.id;
+
+      // 참가자 확인 (IDOR 방지: 참가자만 세션 캐릭터 목록 조회 가능)
+      await assertSessionParticipant(sessionId as string, userId);
 
       const { data: characters, error } = await supabaseAdmin
         .from('characters')
@@ -109,7 +114,7 @@ router.get(
     } catch (err) {
       next(err);
     }
-  }
+  },
 );
 
 // 캐릭터 수정 스키마
@@ -168,6 +173,7 @@ router.patch('/characters/:id', async (req: Request, res: Response, next: NextFu
 router.get('/characters/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
+    const userId = req.user!.id;
 
     const { data: character, error } = await supabaseAdmin
       .from('characters')
@@ -178,6 +184,9 @@ router.get('/characters/:id', async (req: Request, res: Response, next: NextFunc
     if (error || !character) {
       throw new AppError(404, '캐릭터를 찾을 수 없습니다.');
     }
+
+    // 참가자 확인 (IDOR 방지: 해당 캐릭터 세션의 참가자만 조회 가능)
+    await assertSessionParticipant(character.session_id, userId);
 
     res.json({ data: character });
   } catch (err) {
