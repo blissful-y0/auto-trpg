@@ -6,6 +6,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { supabaseAdmin } from '../lib/supabase';
 import { config } from '../config';
 import { AppError } from '../middleware/errorHandler';
+import { assertRulebookAccess } from '../lib/authorization';
 
 const router = Router();
 
@@ -24,7 +25,11 @@ const uploadRulebookSchema = z.object({
   fileType: z.string().refine((v) => v === 'application/pdf', {
     message: 'PDF 파일만 업로드 가능합니다.',
   }),
-  fileSize: z.number().int().min(1).max(100 * 1024 * 1024), // 최대 100MB
+  fileSize: z
+    .number()
+    .int()
+    .min(1)
+    .max(100 * 1024 * 1024), // 최대 100MB
   title: z.string().min(1).max(200),
   gameSystem: z.string().min(1).max(50).optional(),
 });
@@ -155,6 +160,10 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
 router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
+    const userId = req.user!.id;
+
+    // 접근 권한 확인 (IDOR 방지: 소유자 또는 연결된 세션 참가자만 조회 가능)
+    await assertRulebookAccess(id as string, userId);
 
     const { data: rulebook, error } = await supabaseAdmin
       .from('rulebooks')
