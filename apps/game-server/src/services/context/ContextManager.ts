@@ -1,4 +1,8 @@
 // 컨텍스트 매니저 v1 — LLM 프롬프트 조립, 메시지 관리
+// v1.1: MemoryHierarchy 통합 (optional)
+
+import type { MemoryHierarchy } from '../memory/MemoryHierarchy';
+import type { BudgetProfile } from '../memory/types';
 
 // LLM 메시지 타입
 export interface LLMMessage {
@@ -89,11 +93,19 @@ export class ContextManager {
   // 이벤트 로그 (세션별)
   private eventStore: Map<string, GameEventInput[]> = new Map();
 
+  // 메모리 계층 시스템 (optional)
+  private memoryHierarchy?: MemoryHierarchy | null;
+
+  constructor(memoryHierarchy?: MemoryHierarchy | null) {
+    this.memoryHierarchy = memoryHierarchy;
+  }
+
   // LLM 프롬프트 조립 (핵심)
   async buildPrompt(
     session: GameSessionInfo,
     action: PlayerAction,
     characters: CharacterInfo[],
+    budgetProfile?: BudgetProfile,
   ): Promise<LLMMessage[]> {
     const messages: LLMMessage[] = [];
 
@@ -116,6 +128,34 @@ export class ContextManager {
     // Tier 1: 최근 메시지 (슬라이딩 윈도우)
     const recentMessages = await this.getRecentMessages(action.sessionId);
     messages.push(...recentMessages);
+
+    // Tier 2/3: MemoryHierarchy 통합 (있을 때만)
+    if (this.memoryHierarchy && budgetProfile) {
+      const tier0Content = messages.filter((m) => m.role === 'system').map((m) => m.content);
+      const tier1Content = recentMessages.map((m) => m.content);
+
+      const tiered = this.memoryHierarchy.buildTieredContext(
+        budgetProfile,
+        tier0Content,
+        tier1Content,
+      );
+
+      // Tier 2 장면 요약을 시스템 메시지에 추가
+      if (tiered.tier2.length > 0) {
+        messages.push({
+          role: 'system',
+          content: `## 이전 장면 요약\n${tiered.tier2.join('\n\n')}`,
+        });
+      }
+
+      // Tier 3 세션 요약을 시스템 메시지에 추가
+      if (tiered.tier3.length > 0) {
+        messages.push({
+          role: 'system',
+          content: `## 세션 배경\n${tiered.tier3.join('\n\n')}`,
+        });
+      }
+    }
 
     // 현재 플레이어 액션
     const actionPrefix = action.isOOC ? '[OOC] ' : '';
