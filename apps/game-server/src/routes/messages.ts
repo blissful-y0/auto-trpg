@@ -10,7 +10,16 @@ const router = Router({ mergeParams: true });
 router.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { sessionId } = req.params;
-    const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+
+    let limit = 50;
+    if (req.query.limit) {
+      const parsed = parseInt(req.query.limit as string, 10);
+      if (!Number.isInteger(parsed) || parsed < 1 || parsed > 100) {
+        throw new AppError(400, 'limit must be an integer between 1 and 100');
+      }
+      limit = parsed;
+    }
+
     const before = req.query.before as string;
 
     let query = supabaseAdmin
@@ -47,7 +56,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
       throw new AppError(400, '메시지 내용이 필요합니다.');
     }
 
-    const senderType = type === 'ooc' ? 'player' : (type || 'player');
+    const senderType = type === 'ooc' ? 'player' : type || 'player';
     const isOOC = type === 'ooc';
 
     const { data, error } = await supabaseAdmin
