@@ -8,6 +8,7 @@ import {
   GameSessionInfo,
   CharacterInfo,
 } from '../context/ContextManager';
+import type { InterventionManager } from '../intervention/InterventionManager';
 
 export type ActionType = 'combat' | 'exploration' | 'roleplay' | 'skill_check' | 'dice_roll' | 'other';
 
@@ -26,6 +27,7 @@ export class GameEngine {
     private contextManager: ContextManager,
     private llmRouter: { call: (messages: unknown[], tools: unknown[]) => Promise<GMResponse> } | null,
     private diceEngine: DiceEngine,
+    private interventionManager?: InterventionManager | null,
   ) {}
 
   // 플레이어 액션 처리 (핵심 게임 루프)
@@ -34,6 +36,29 @@ export class GameEngine {
     characters: CharacterInfo[],
     action: PlayerAction,
   ): Promise<GMResponse> {
+    // 0. 개입 판단 (InterventionManager가 있을 때만)
+    if (this.interventionManager) {
+      const decision = await this.interventionManager.evaluate({
+        sessionId: action.sessionId,
+        characterId: action.characterId,
+        userId: action.userId,
+        message: action.message,
+        isOOC: action.isOOC,
+        aggressiveness: 'balanced', // 세션 설정에서 가져올 예정
+      });
+
+      if (!decision.shouldIntervene) {
+        // 개입하지 않을 경우 메시지만 저장하고 빈 응답
+        await this.contextManager.saveMessage(action.sessionId, {
+          role: 'user',
+          content: action.message,
+          characterId: action.characterId,
+          userId: action.userId,
+        });
+        return { narrative: '' }; // 빈 내러티브 = GM 침묵
+      }
+    }
+
     // 1. 액션 유형 판별
     const actionType = this.classifyAction(action.message);
 
