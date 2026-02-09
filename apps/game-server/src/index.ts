@@ -1,8 +1,10 @@
 import express from 'express';
 import cors from 'cors';
+import { createServer } from 'http';
 import { config } from './config';
 import { authMiddleware } from './middleware/auth';
 import { errorHandler } from './middleware/errorHandler';
+import { createSocketServer } from './socket';
 import healthRouter from './routes/health';
 import sessionsRouter from './routes/sessions';
 import charactersRouter from './routes/characters';
@@ -28,9 +30,13 @@ app.use('/api/keys', authMiddleware, apiKeysRouter);
 // 전역 에러 핸들러
 app.use(errorHandler);
 
-// 서버 시작
-app.listen(config.port, () => {
+// HTTP 서버 + Socket.io
+const httpServer = createServer(app);
+const io = createSocketServer(httpServer);
+
+httpServer.listen(config.port, () => {
   console.log(`게임 서버가 포트 ${config.port}에서 시작되었습니다. (${config.nodeEnv})`);
+  console.log(`Socket.io 서버 활성화`);
 });
 
-export default app;
+export { app, httpServer, io };
