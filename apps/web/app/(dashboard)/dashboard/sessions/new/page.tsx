@@ -2,6 +2,8 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { toast } from 'sonner';
+import { Loader2, ArrowLeft, Sparkles } from 'lucide-react';
 import { sessionApi } from '@/lib/api';
 
 const gameSystems = [
@@ -13,9 +15,9 @@ const gameSystems = [
 ];
 
 const llmProviders = [
-  { id: 'openai', name: 'OpenAI (GPT-4)' },
-  { id: 'anthropic', name: 'Anthropic (Claude)' },
-  { id: 'google', name: 'Google (Gemini)' },
+  { id: 'anthropic', name: 'Anthropic (Claude)', desc: '고품질 내러티브', color: 'text-orange-400 border-orange-500/30 bg-orange-500/10' },
+  { id: 'openai', name: 'OpenAI (GPT-4)', desc: '다목적 활용', color: 'text-emerald-400 border-emerald-500/30 bg-emerald-500/10' },
+  { id: 'google', name: 'Google (Gemini)', desc: '빠른 응답', color: 'text-blue-400 border-blue-500/30 bg-blue-500/10' },
 ];
 
 const gmAggressivenessOptions = [
@@ -54,6 +56,10 @@ export default function NewSessionPage() {
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (!formData.name.trim()) {
+      toast.error('세션 이름을 입력해주세요');
+      return;
+    }
     setIsLoading(true);
     try {
       const res = await sessionApi.create({
@@ -63,9 +69,10 @@ export default function NewSessionPage() {
         primaryProvider: providerMapping[formData.provider],
         gmAggressiveness: aggressivenessMapping[formData.gmAggressiveness],
       }) as any;
+      toast.success('세션이 생성되었습니다');
       router.push(`/session/${res.data.id}`);
     } catch (err: any) {
-      alert(err.message || '세션 생성에 실패했습니다.');
+      toast.error(err.message || '세션 생성에 실패했습니다');
     } finally {
       setIsLoading(false);
     }
@@ -73,13 +80,26 @@ export default function NewSessionPage() {
 
   return (
     <div className="max-w-2xl mx-auto">
-      <h2 className="text-2xl font-bold text-slate-100 mb-2">새 세션 만들기</h2>
-      <p className="text-slate-400 mb-8">새로운 TRPG 모험을 시작하세요</p>
+      <button
+        onClick={() => router.back()}
+        className="flex items-center gap-1 text-sm text-slate-400 hover:text-slate-200 mb-6 transition-colors"
+      >
+        <ArrowLeft size={16} />
+        돌아가기
+      </button>
+
+      <div className="mb-8">
+        <h2 className="text-2xl font-bold text-slate-100 flex items-center gap-2">
+          <Sparkles size={24} className="text-amber-400" />
+          새 세션 만들기
+        </h2>
+        <p className="text-slate-400 mt-1 text-sm">새로운 TRPG 모험을 시작하세요</p>
+      </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
         {/* 세션 이름 */}
-        <div>
-          <label className="block text-sm font-medium text-slate-300 mb-2">
+        <div className="card p-5">
+          <label className="block text-sm font-medium text-slate-200 mb-2">
             세션 이름
           </label>
           <input
@@ -94,142 +114,145 @@ export default function NewSessionPage() {
           />
         </div>
 
-        {/* 게임 시스템 */}
-        <div>
-          <label className="block text-sm font-medium text-slate-300 mb-2">
-            게임 시스템
-          </label>
-          <select
-            value={formData.system}
-            onChange={(e) =>
-              setFormData({ ...formData, system: e.target.value })
-            }
-            className="input-field"
-          >
-            {gameSystems.map((sys) => (
-              <option key={sys.id} value={sys.id}>
-                {sys.name}
-              </option>
-            ))}
-          </select>
-        </div>
+        {/* 게임 시스템 + 최대 인원 */}
+        <div className="card p-5 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-200 mb-2">
+              게임 시스템
+            </label>
+            <select
+              value={formData.system}
+              onChange={(e) =>
+                setFormData({ ...formData, system: e.target.value })
+              }
+              className="input-field"
+            >
+              {gameSystems.map((sys) => (
+                <option key={sys.id} value={sys.id}>
+                  {sys.name}
+                </option>
+              ))}
+            </select>
+          </div>
 
-        {/* 최대 인원 */}
-        <div>
-          <label className="block text-sm font-medium text-slate-300 mb-2">
-            최대 플레이어 수
-          </label>
-          <input
-            type="number"
-            min={1}
-            max={8}
-            value={formData.maxPlayers}
-            onChange={(e) =>
-              setFormData({ ...formData, maxPlayers: parseInt(e.target.value) })
-            }
-            className="input-field w-32"
-          />
-        </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-200 mb-2">
+              최대 플레이어 수
+            </label>
+            <input
+              type="number"
+              min={1}
+              max={8}
+              value={formData.maxPlayers}
+              onChange={(e) =>
+                setFormData({ ...formData, maxPlayers: parseInt(e.target.value) || 4 })
+              }
+              className="input-field w-32"
+            />
+          </div>
 
-        {/* 규칙서 선택 */}
-        <div>
-          <label className="block text-sm font-medium text-slate-300 mb-2">
-            규칙서 (선택사항)
-          </label>
-          <select
-            value={formData.rulebook}
-            onChange={(e) =>
-              setFormData({ ...formData, rulebook: e.target.value })
-            }
-            className="input-field"
-          >
-            <option value="">규칙서 없이 시작</option>
-            <option value="phb">Player&apos;s Handbook</option>
-            <option value="dmg">Dungeon Master&apos;s Guide</option>
-          </select>
-          <p className="text-xs text-slate-500 mt-1">
-            업로드된 규칙서를 선택하면 AI GM이 해당 규칙을 참고합니다
-          </p>
+          {/* 규칙서 선택 */}
+          <div>
+            <label className="block text-sm font-medium text-slate-200 mb-2">
+              규칙서
+              <span className="text-slate-500 font-normal ml-1">(선택사항)</span>
+            </label>
+            <select
+              value={formData.rulebook}
+              onChange={(e) =>
+                setFormData({ ...formData, rulebook: e.target.value })
+              }
+              className="input-field"
+            >
+              <option value="">규칙서 없이 시작</option>
+              <option value="phb">Player&apos;s Handbook</option>
+              <option value="dmg">Dungeon Master&apos;s Guide</option>
+            </select>
+            <p className="text-xs text-slate-500 mt-1.5">
+              업로드된 규칙서를 선택하면 AI GM이 해당 규칙을 참고합니다
+            </p>
+          </div>
         </div>
 
         {/* LLM 프로바이더 */}
-        <div>
-          <label className="block text-sm font-medium text-slate-300 mb-2">
+        <div className="card p-5">
+          <label className="block text-sm font-medium text-slate-200 mb-3">
             AI 프로바이더
           </label>
-          <div className="grid grid-cols-3 gap-3">
-            {llmProviders.map((provider) => (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {llmProviders.map((provider) => {
+              const isSelected = formData.provider === provider.id;
+              return (
+                <button
+                  key={provider.id}
+                  type="button"
+                  onClick={() =>
+                    setFormData({ ...formData, provider: provider.id })
+                  }
+                  className={`p-3.5 rounded-xl border text-left transition-all ${
+                    isSelected
+                      ? `${provider.color} border-2`
+                      : 'border-slate-700 bg-slate-700/30 text-slate-300 hover:border-slate-600'
+                  }`}
+                >
+                  <span className="text-sm font-medium block">{provider.name}</span>
+                  <span className="text-xs opacity-70 mt-0.5 block">{provider.desc}</span>
+                </button>
+              );
+            })}
+          </div>
+          <p className="text-xs text-slate-500 mt-2">
+            설정 페이지에서 해당 프로바이더의 API 키를 등록해야 합니다
+          </p>
+        </div>
+
+        {/* GM 적극성 */}
+        <div className="card p-5">
+          <label className="block text-sm font-medium text-slate-200 mb-3">
+            GM 적극성
+          </label>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {gmAggressivenessOptions.map((level) => (
               <button
-                key={provider.id}
+                key={level.value}
                 type="button"
                 onClick={() =>
-                  setFormData({ ...formData, provider: provider.id })
+                  setFormData({
+                    ...formData,
+                    gmAggressiveness: level.value,
+                  })
                 }
-                className={`p-3 rounded-lg border text-sm text-center transition-colors ${
-                  formData.provider === provider.id
-                    ? 'border-primary-500 bg-primary-600/20 text-primary-400'
-                    : 'border-slate-600 bg-slate-700 text-slate-300 hover:border-slate-500'
+                className={`p-3 rounded-xl border text-center transition-all ${
+                  formData.gmAggressiveness === level.value
+                    ? 'border-primary-500 bg-primary-600/15 text-primary-400 border-2'
+                    : 'border-slate-700 bg-slate-700/30 text-slate-300 hover:border-slate-600'
                 }`}
               >
-                {provider.name}
+                <span className="text-sm font-medium block">{level.label}</span>
+                <span className="text-xs text-slate-500 mt-0.5 block">{level.desc}</span>
               </button>
             ))}
           </div>
         </div>
 
-        {/* GM 적극성 */}
-        <div>
-          <label className="block text-sm font-medium text-slate-300 mb-2">
-            GM 적극성
-          </label>
-          <div className="space-y-2">
-            {gmAggressivenessOptions.map((level) => (
-              <label
-                key={level.value}
-                className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
-                  formData.gmAggressiveness === level.value
-                    ? 'border-primary-500 bg-primary-600/20'
-                    : 'border-slate-600 bg-slate-700 hover:border-slate-500'
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="aggressiveness"
-                  value={level.value}
-                  checked={formData.gmAggressiveness === level.value}
-                  onChange={() =>
-                    setFormData({
-                      ...formData,
-                      gmAggressiveness: level.value,
-                    })
-                  }
-                  className="sr-only"
-                />
-                <span className="text-sm font-medium text-slate-200">
-                  {level.label}
-                </span>
-                <span className="text-xs text-slate-400">{level.desc}</span>
-              </label>
-            ))}
-          </div>
-        </div>
-
         {/* 제출 버튼 */}
-        <div className="flex gap-3 pt-4">
+        <div className="flex gap-3">
           <button
             type="submit"
             disabled={isLoading}
-            className="btn-primary flex-1 disabled:opacity-50"
+            className="btn-primary flex-1 py-3 disabled:opacity-50 flex items-center justify-center gap-2 text-base"
           >
-            {isLoading ? '생성 중...' : '세션 생성'}
-          </button>
-          <button
-            type="button"
-            onClick={() => router.back()}
-            className="btn-secondary"
-            disabled={isLoading}
-          >
-            취소
+            {isLoading ? (
+              <>
+                <Loader2 size={18} className="animate-spin" />
+                생성 중...
+              </>
+            ) : (
+              <>
+                <Sparkles size={18} />
+                세션 생성
+              </>
+            )}
           </button>
         </div>
       </form>

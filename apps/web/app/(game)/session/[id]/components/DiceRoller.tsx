@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { getSocket } from '@/lib/socket';
+import { Dice5, Minus, Plus } from 'lucide-react';
 
 const diceTypes = [
   { sides: 4, label: 'd4' },
@@ -70,8 +71,6 @@ export default function DiceRoller({ sessionId }: { sessionId: string }) {
 
     setRolling(true);
 
-    // advantage/disadvantage일 때는 count=2로 서버에 전송
-    // 서버는 count만큼 주사위를 굴리고 합계 반환
     const actualCount = advantage !== 'normal' && selectedDice === 20 ? 2 : count;
 
     socket.emit('dice:roll', {
@@ -87,16 +86,16 @@ export default function DiceRoller({ sessionId }: { sessionId: string }) {
     <div className="p-4 space-y-4">
       {/* 주사위 타입 선택 */}
       <div>
-        <h4 className="text-sm font-medium text-slate-300 mb-2">주사위 선택</h4>
-        <div className="grid grid-cols-4 gap-2">
+        <h4 className="text-xs font-medium text-slate-400 mb-2 uppercase tracking-wider">주사위 선택</h4>
+        <div className="grid grid-cols-4 gap-1.5">
           {diceTypes.map((dice) => (
             <button
               key={dice.sides}
               onClick={() => setSelectedDice(dice.sides)}
-              className={`p-2 rounded-lg text-sm font-medium transition-colors ${
+              className={`p-2 rounded-lg text-sm font-medium transition-all ${
                 selectedDice === dice.sides
-                  ? 'bg-primary-600 text-white'
-                  : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                  ? 'bg-primary-600/20 text-primary-400 border border-primary-500/30 ring-1 ring-primary-500/20'
+                  : 'bg-slate-700/30 text-slate-400 border border-transparent hover:bg-slate-700/50 hover:text-slate-300'
               }`}
             >
               {dice.label}
@@ -108,34 +107,62 @@ export default function DiceRoller({ sessionId }: { sessionId: string }) {
       {/* 개수 및 수정치 */}
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="block text-xs text-slate-400 mb-1">개수</label>
-          <input
-            type="number"
-            min={1}
-            max={10}
-            value={count}
-            onChange={(e) => setCount(parseInt(e.target.value) || 1)}
-            className="input-field text-center"
-          />
+          <label className="block text-xs text-slate-500 mb-1.5">개수</label>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setCount(Math.max(1, count - 1))}
+              className="p-1.5 rounded-lg bg-slate-700/50 text-slate-400 hover:text-slate-200 transition-colors"
+            >
+              <Minus size={14} />
+            </button>
+            <input
+              type="number"
+              min={1}
+              max={10}
+              value={count}
+              onChange={(e) => setCount(parseInt(e.target.value) || 1)}
+              className="input-field text-center flex-1"
+            />
+            <button
+              onClick={() => setCount(Math.min(10, count + 1))}
+              className="p-1.5 rounded-lg bg-slate-700/50 text-slate-400 hover:text-slate-200 transition-colors"
+            >
+              <Plus size={14} />
+            </button>
+          </div>
         </div>
         <div>
-          <label className="block text-xs text-slate-400 mb-1">수정치</label>
-          <input
-            type="number"
-            value={modifier}
-            onChange={(e) => setModifier(parseInt(e.target.value) || 0)}
-            className="input-field text-center"
-          />
+          <label className="block text-xs text-slate-500 mb-1.5">수정치</label>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setModifier(modifier - 1)}
+              className="p-1.5 rounded-lg bg-slate-700/50 text-slate-400 hover:text-slate-200 transition-colors"
+            >
+              <Minus size={14} />
+            </button>
+            <input
+              type="number"
+              value={modifier}
+              onChange={(e) => setModifier(parseInt(e.target.value) || 0)}
+              className="input-field text-center flex-1"
+            />
+            <button
+              onClick={() => setModifier(modifier + 1)}
+              className="p-1.5 rounded-lg bg-slate-700/50 text-slate-400 hover:text-slate-200 transition-colors"
+            >
+              <Plus size={14} />
+            </button>
+          </div>
         </div>
       </div>
 
       {/* 이점/불리 토글 (d20 전용) */}
       {selectedDice === 20 && (
         <div>
-          <label className="block text-xs text-slate-400 mb-1">
+          <label className="block text-xs text-slate-500 mb-1.5">
             이점/불리
           </label>
-          <div className="grid grid-cols-3 gap-1">
+          <div className="grid grid-cols-3 gap-1.5">
             {(
               [
                 { key: 'disadvantage', label: '불리' },
@@ -146,10 +173,10 @@ export default function DiceRoller({ sessionId }: { sessionId: string }) {
               <button
                 key={opt.key}
                 onClick={() => setAdvantage(opt.key)}
-                className={`py-1.5 rounded text-xs font-medium transition-colors ${
+                className={`py-2 rounded-lg text-xs font-medium transition-all ${
                   advantage === opt.key
-                    ? 'bg-primary-600 text-white'
-                    : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                    ? 'bg-primary-600/20 text-primary-400 border border-primary-500/30'
+                    : 'bg-slate-700/30 text-slate-400 border border-transparent hover:bg-slate-700/50'
                 }`}
               >
                 {opt.label}
@@ -163,30 +190,39 @@ export default function DiceRoller({ sessionId }: { sessionId: string }) {
       <button
         onClick={rollDice}
         disabled={rolling}
-        className={`btn-primary w-full text-lg py-3 glow-amber ${rolling ? 'opacity-50 cursor-not-allowed' : ''}`}
+        className={`btn-primary w-full py-3 flex items-center justify-center gap-2 text-base ${
+          rolling ? 'opacity-50 cursor-not-allowed' : 'glow-amber'
+        }`}
       >
+        {rolling ? (
+          <span className="animate-spin"><Dice5 size={20} /></span>
+        ) : (
+          <Dice5 size={20} />
+        )}
         {rolling ? '굴리는 중...' : (
-          <>🎲 {count}d{selectedDice}
-          {modifier !== 0 ? (modifier > 0 ? `+${modifier}` : modifier) : ''} 굴리기</>
+          <>
+            {count}d{selectedDice}
+            {modifier !== 0 ? (modifier > 0 ? `+${modifier}` : modifier) : ''} 굴리기
+          </>
         )}
       </button>
 
       {/* 결과 목록 */}
       {results.length > 0 && (
         <div>
-          <h4 className="text-sm font-medium text-slate-300 mb-2">결과</h4>
-          <div className="space-y-2">
+          <h4 className="text-xs font-medium text-slate-400 mb-2 uppercase tracking-wider">결과</h4>
+          <div className="space-y-1.5">
             {results.map((result, i) => (
               <div
                 key={i}
-                className={`flex items-center justify-between p-2 rounded-lg ${
+                className={`flex items-center justify-between p-2.5 rounded-xl transition-all ${
                   i === 0
-                    ? 'bg-amber-900/30 border border-amber-700/30'
-                    : 'bg-slate-700/30'
+                    ? 'bg-amber-900/20 border border-amber-700/20'
+                    : 'bg-slate-700/20'
                 }`}
               >
                 <div>
-                  <span className="text-sm text-slate-300">
+                  <span className="text-sm text-slate-300 font-medium">
                     {result.notation}
                   </span>
                   <span className="text-xs text-slate-500 ml-2">
@@ -201,7 +237,7 @@ export default function DiceRoller({ sessionId }: { sessionId: string }) {
                   >
                     {result.total}
                   </span>
-                  <span className="text-xs text-slate-500">
+                  <span className="text-[10px] text-slate-600">
                     {result.timestamp}
                   </span>
                 </div>

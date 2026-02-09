@@ -27,23 +27,33 @@ async function fetchApi<T>(endpoint: string, options: ApiOptions = {}): Promise<
 
   // 인증 토큰 자동 추가
   const token = await getAccessToken();
-  const authHeaders: Record<string, string> = token
-    ? { Authorization: `Bearer ${token}` }
-    : {};
+  if (!token) {
+    throw new Error('로그인이 필요합니다. 다시 로그인해주세요.');
+  }
 
-  const res = await fetch(`${API_BASE_URL}${endpoint}`, {
-    method,
-    headers: {
-      'Content-Type': 'application/json',
-      ...authHeaders,
-      ...headers,
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  const authHeaders: Record<string, string> = {
+    Authorization: `Bearer ${token}`,
+  };
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}${endpoint}`, {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeaders,
+        ...headers,
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch {
+    throw new Error('게임 서버에 연결할 수 없습니다. 서버가 실행 중인지 확인하세요.');
+  }
 
   if (!res.ok) {
-    const error = await res.json().catch(() => ({ message: 'API 요청 실패' }));
-    throw new Error(error.message ?? `HTTP ${res.status}`);
+    const error = await res.json().catch(() => null);
+    const message = error?.message ?? `서버 오류 (HTTP ${res.status})`;
+    throw new Error(message);
   }
 
   return res.json();
@@ -51,20 +61,20 @@ async function fetchApi<T>(endpoint: string, options: ApiOptions = {}): Promise<
 
 // 세션 API
 export const sessionApi = {
-  list: () => fetchApi<unknown[]>('/api/sessions'),
-  get: (id: string) => fetchApi<unknown>(`/api/sessions/${id}`),
+  list: () => fetchApi<{ data: unknown[] }>('/api/sessions'),
+  get: (id: string) => fetchApi<{ data: unknown }>(`/api/sessions/${id}`),
   create: (data: unknown) =>
-    fetchApi<unknown>('/api/sessions', { method: 'POST', body: data }),
+    fetchApi<{ data: unknown }>('/api/sessions', { method: 'POST', body: data }),
   join: (id: string) =>
-    fetchApi<unknown>(`/api/sessions/${id}/join`, { method: 'POST' }),
+    fetchApi<{ data: unknown }>(`/api/sessions/${id}/join`, { method: 'POST' }),
 };
 
 // 캐릭터 API
 export const characterApi = {
   get: (sessionId: string) =>
-    fetchApi<unknown>(`/api/sessions/${sessionId}/character`),
+    fetchApi<{ data: unknown }>(`/api/sessions/${sessionId}/character`),
   create: (sessionId: string, data: unknown) =>
-    fetchApi<unknown>(`/api/sessions/${sessionId}/character`, {
+    fetchApi<{ data: unknown }>(`/api/sessions/${sessionId}/character`, {
       method: 'POST',
       body: data,
     }),
@@ -73,31 +83,36 @@ export const characterApi = {
 // 채팅 API
 export const chatApi = {
   getMessages: (sessionId: string) =>
-    fetchApi<unknown[]>(`/api/sessions/${sessionId}/messages`),
+    fetchApi<{ data: unknown[] }>(`/api/sessions/${sessionId}/messages`),
   sendMessage: (sessionId: string, content: string, isOOC: boolean) =>
-    fetchApi<unknown>(`/api/sessions/${sessionId}/messages`, {
+    fetchApi<{ data: unknown }>(`/api/sessions/${sessionId}/messages`, {
       method: 'POST',
-      body: { content, isOOC },
+      body: { content, type: isOOC ? 'ooc' : 'player' },
     }),
 };
 
 // 규칙서 API
 export const rulebookApi = {
-  list: () => fetchApi<unknown[]>('/api/rulebooks'),
+  list: () => fetchApi<{ data: unknown[] }>('/api/rulebooks'),
   upload: async (file: File) => {
     const formData = new FormData();
     formData.append('file', file);
 
     const token = await getAccessToken();
-    const headers: Record<string, string> = token
-      ? { Authorization: `Bearer ${token}` }
-      : {};
+    if (!token) {
+      throw new Error('로그인이 필요합니다.');
+    }
 
-    const res = await fetch(`${API_BASE_URL}/api/rulebooks/upload`, {
-      method: 'POST',
-      headers,
-      body: formData,
-    });
+    let res: Response;
+    try {
+      res = await fetch(`${API_BASE_URL}/api/rulebooks/upload`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
+    } catch {
+      throw new Error('서버에 연결할 수 없습니다.');
+    }
 
     if (!res.ok) throw new Error('업로드 실패');
     return res.json();
@@ -108,14 +123,14 @@ export const rulebookApi = {
 export const settingsApi = {
   getApiKeys: () => fetchApi<{ data: unknown[] }>('/api/keys'),
   addApiKey: (provider: string, apiKey: string) =>
-    fetchApi<unknown>('/api/keys', {
+    fetchApi<{ data: unknown }>('/api/keys', {
       method: 'POST',
       body: { provider, apiKey },
     }),
   deleteApiKey: (provider: string) =>
-    fetchApi<unknown>(`/api/keys/${provider}`, { method: 'DELETE' }),
+    fetchApi<{ message: string }>(`/api/keys/${provider}`, { method: 'DELETE' }),
   validateApiKey: (provider: string) =>
-    fetchApi<unknown>(`/api/keys/${provider}/validate`, {
+    fetchApi<{ data: { provider: string; isValid: boolean; message: string } }>(`/api/keys/${provider}/validate`, {
       method: 'POST',
     }),
 };

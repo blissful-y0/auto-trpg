@@ -1,6 +1,7 @@
 'use client';
 
 import { useGameStore } from '@/lib/stores/gameStore';
+import { Swords, Shield, Heart } from 'lucide-react';
 
 // 상태이상 한글 매핑
 const CONDITION_ICONS: Record<string, string> = {
@@ -26,10 +27,11 @@ export default function CombatTracker() {
 
   if (!isInCombat || combatants.length === 0) {
     return (
-      <div className="p-4 text-center">
-        <p className="text-sm text-slate-500">현재 전투 중이 아닙니다.</p>
+      <div className="flex flex-col items-center text-center p-6 py-10">
+        <Swords size={28} className="text-slate-600 mb-3" />
+        <p className="text-sm text-slate-500">현재 전투 중이 아닙니다</p>
         <p className="text-xs text-slate-600 mt-1">
-          전투가 시작되면 여기에 표시됩니다.
+          전투가 시작되면 이니셔티브 순서가 표시됩니다
         </p>
       </div>
     );
@@ -39,14 +41,15 @@ export default function CombatTracker() {
     <div className="p-4 space-y-4">
       {/* 라운드 카운터 */}
       <div className="flex items-center justify-between">
-        <h4 className="text-sm font-medium text-slate-300">전투 트래커</h4>
-        <span className="text-xs px-2 py-1 bg-red-500/20 text-red-400 rounded-full">
+        <h4 className="text-xs font-medium text-slate-400 uppercase tracking-wider">전투 트래커</h4>
+        <span className="inline-flex items-center gap-1 text-xs px-2.5 py-1 bg-red-500/15 text-red-400 rounded-full border border-red-500/20">
+          <Swords size={12} />
           라운드 {currentRound}
         </span>
       </div>
 
       {/* 이니셔티브 순서 */}
-      <div className="space-y-1">
+      <div className="space-y-1.5">
         {combatants.map((c) => {
           const isDead = c.hp.current <= 0;
           const hpPercent = c.hp.max > 0 ? (c.hp.current / c.hp.max) * 100 : 0;
@@ -57,50 +60,47 @@ export default function CombatTracker() {
                 ? 'bg-yellow-500'
                 : 'bg-red-500';
 
-          // 상태이상 태그 (conditions가 있는 경우)
           const conditions = (c as { conditions?: string[] }).conditions ?? [];
 
           return (
             <div
               key={c.id}
-              className={`flex items-center gap-3 p-2 rounded-lg transition-colors ${
+              className={`flex items-center gap-3 p-2.5 rounded-xl transition-all ${
                 c.isCurrentTurn
-                  ? 'bg-amber-900/30 border border-amber-700/50'
+                  ? 'bg-amber-900/20 border border-amber-700/30 ring-1 ring-amber-500/10'
                   : isDead
-                    ? 'opacity-40'
-                    : 'bg-slate-700/30'
+                    ? 'opacity-40 bg-slate-800/30'
+                    : 'bg-slate-700/20'
               }`}
             >
               {/* 현재 턴 표시 */}
-              <div className="w-5 text-center">
+              <div className="w-5 text-center shrink-0">
                 {c.isCurrentTurn && (
                   <span className="text-amber-400 text-sm">▶</span>
                 )}
               </div>
 
               {/* 이니셔티브 */}
-              <span className="text-xs text-slate-500 w-6 text-center">
+              <span className="text-xs text-slate-500 w-6 text-center shrink-0 font-mono">
                 {c.initiative}
               </span>
 
               {/* 이름 + 상태이상 */}
               <div className="flex-1 min-w-0">
                 <span
-                  className={`text-sm ${
+                  className={`text-sm font-medium ${
                     c.isPlayer ? 'text-primary-400' : 'text-red-400'
                   } ${isDead ? 'line-through' : ''}`}
                 >
                   {c.name}
                 </span>
 
-                {/* 상태이상 태그 */}
                 {conditions.length > 0 && (
                   <div className="flex flex-wrap gap-1 mt-0.5">
                     {conditions.map((cond: string) => (
                       <span
                         key={cond}
-                        className="text-[10px] px-1 py-0.5 bg-purple-500/20 text-purple-400 rounded"
-                        title={CONDITION_ICONS[cond] ?? cond}
+                        className="text-[10px] px-1 py-0.5 bg-purple-500/15 text-purple-400 rounded"
                       >
                         {CONDITION_ICONS[cond] ?? cond}
                       </span>
@@ -110,22 +110,28 @@ export default function CombatTracker() {
               </div>
 
               {/* HP 바 */}
-              <div className="w-20">
-                <div className="h-1.5 rounded-full bg-slate-600 overflow-hidden">
+              <div className="w-20 shrink-0">
+                <div className="h-1.5 rounded-full bg-slate-600/50 overflow-hidden">
                   <div
-                    className={`h-full rounded-full transition-all duration-300 ${isDead ? 'bg-slate-500' : hpColor}`}
+                    className={`h-full rounded-full transition-all duration-500 ${isDead ? 'bg-slate-500' : hpColor}`}
                     style={{ width: `${Math.max(hpPercent, 0)}%` }}
                   />
                 </div>
-                <div className="text-xs text-slate-500 text-center mt-0.5">
-                  {c.hp.current}/{c.hp.max}
+                <div className="flex items-center justify-center gap-0.5 mt-0.5">
+                  <Heart size={8} className="text-slate-600" />
+                  <span className="text-[10px] text-slate-500">
+                    {c.hp.current}/{c.hp.max}
+                  </span>
                 </div>
               </div>
 
               {/* AC */}
-              <span className="text-xs text-slate-500 w-8 text-center">
-                AC {c.ac}
-              </span>
+              <div className="flex items-center gap-0.5 shrink-0">
+                <Shield size={10} className="text-slate-600" />
+                <span className="text-xs text-slate-500">
+                  {c.ac}
+                </span>
+              </div>
             </div>
           );
         })}
