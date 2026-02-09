@@ -9,7 +9,6 @@ export default function Home() {
   const [checking, setChecking] = useState(true);
 
   useEffect(() => {
-    // Supabase 세션 확인 후 리다이렉트
     const supabase = createClient();
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session) {
@@ -24,12 +23,12 @@ export default function Home() {
   if (!checking) return null;
 
   return (
-    <div className="flex items-center justify-center min-h-screen">
-      <div className="text-center">
-        <h1 className="text-4xl font-bold text-amber-400 text-shadow mb-2">
+    <div className="flex items-center justify-center min-h-screen bg-bg-base">
+      <div className="text-center animate-fade-in">
+        <h1 className="font-serif text-display text-gold text-shadow mb-2">
           Auto TRPG
         </h1>
-        <p className="text-slate-400">로딩 중...</p>
+        <p className="text-text-tertiary text-body-sm">로딩 중...</p>
       </div>
     </div>
   );

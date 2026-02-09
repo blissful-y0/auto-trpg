@@ -4,105 +4,305 @@
 
 @layer base {
   :root {
-    --background: 15 23 42;
-    --foreground: 241 245 249;
+    /* ===== 배경 ===== */
+    --bg-base: #FAFAFA;
+    --bg-surface: #FFFFFF;
+    --bg-elevated: #FFFFFF;
+    --bg-overlay: #F5F5F5;
+    --bg-inset: #F0F0F0;
+
+    /* ===== 텍스트 ===== */
+    --text-primary: #171717;
+    --text-secondary: #525252;
+    --text-tertiary: #A3A3A3;
+    --text-inverse: #FAFAFA;
+
+    /* ===== 테두리 ===== */
+    --border-default: #E5E5E5;
+    --border-subtle: #F0F0F0;
+    --border-strong: #D4D4D4;
+
+    /* ===== 포인트 ===== */
+    --accent-gold: #B8941F;
+    --accent-gold-dim: #8B7119;
+    --accent-gold-glow: rgba(184, 148, 31, 0.1);
+
+    /* ===== 시맨틱 ===== */
+    --status-success: #16A34A;
+    --status-warning: #CA8A04;
+    --status-danger: #DC2626;
+    --status-info: #2563EB;
+    --status-purple: #7C3AED;
+
+    /* ===== 다이스 ===== */
+    --dice-natural: #171717;
+    --dice-critical: #B8941F;
+    --dice-fumble: #DC2626;
+
+    /* ===== 라운딩 ===== */
+    --radius-sm: 4px;
+    --radius-md: 8px;
+    --radius-lg: 12px;
+    --radius-xl: 16px;
+    --radius-full: 9999px;
+
+    /* ===== 그림자 ===== */
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.1);
+    --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.15);
+    --shadow-glow: 0 0 20px var(--accent-gold-glow);
+  }
+
+  .dark {
+    /* ===== 배경 ===== */
+    --bg-base: #0F0F0F;
+    --bg-surface: #171717;
+    --bg-elevated: #1F1F1F;
+    --bg-overlay: #262626;
+    --bg-inset: #0A0A0A;
+
+    /* ===== 텍스트 ===== */
+    --text-primary: #E5E5E5;
+    --text-secondary: #A3A3A3;
+    --text-tertiary: #737373;
+    --text-inverse: #0F0F0F;
+
+    /* ===== 테두리 ===== */
+    --border-default: #262626;
+    --border-subtle: #1F1F1F;
+    --border-strong: #404040;
+
+    /* ===== 포인트 ===== */
+    --accent-gold: #D4A843;
+    --accent-gold-dim: #A3822F;
+    --accent-gold-glow: rgba(212, 168, 67, 0.15);
+
+    /* ===== 시맨틱 ===== */
+    --status-success: #22C55E;
+    --status-warning: #EAB308;
+    --status-danger: #EF4444;
+    --status-info: #60A5FA;
+    --status-purple: #A78BFA;
+
+    /* ===== 다이스 ===== */
+    --dice-natural: #E5E5E5;
+    --dice-critical: #D4A843;
+    --dice-fumble: #EF4444;
+
+    /* ===== 그림자 (다크에서 더 강하게) ===== */
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+    --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
+    --shadow-glow: 0 0 20px var(--accent-gold-glow);
   }
 
   body {
-    @apply bg-slate-900 text-slate-100 antialiased;
+    background-color: var(--bg-base);
+    color: var(--text-primary);
   }
 
-  /* 스크롤바 다크 테마 */
+  /* 스크롤바 커스텀 */
   ::-webkit-scrollbar {
-    @apply w-1.5;
+    width: 6px;
+    height: 6px;
   }
   ::-webkit-scrollbar-track {
-    @apply bg-transparent;
+    background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    @apply bg-slate-600/50 rounded-full;
+    background: var(--border-strong);
+    border-radius: var(--radius-full);
   }
   ::-webkit-scrollbar-thumb:hover {
-    @apply bg-slate-500/70;
+    background: var(--text-tertiary);
   }
 
-  /* select 요소 다크 모드 */
+  /* select 요소 스타일 */
   select option {
-    @apply bg-slate-800 text-slate-100;
+    background: var(--bg-elevated);
+    color: var(--text-primary);
   }
 }
 
 @layer components {
-  /* 카드 컴포넌트 기본 스타일 */
+  /* 카드 컴포넌트 */
   .card {
-    @apply bg-slate-800/80 border border-slate-700/50 rounded-xl shadow-lg;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+    transition: border-color 150ms;
+  }
+  .card:hover {
+    border-color: var(--border-strong);
   }
 
-  /* 판타지 테마 보더 */
-  .fantasy-border {
-    @apply border border-amber-900/30 shadow-[0_0_15px_rgba(217,119,6,0.1)];
-  }
-
-  /* 입력 필드 기본 스타일 */
+  /* 인풋 필드 */
   .input-field {
-    @apply w-full px-3 py-2.5 bg-slate-800/80 border border-slate-600/50 rounded-xl
-           text-slate-100 placeholder-slate-500
-           focus:outline-none focus:ring-2 focus:ring-primary-500/40 focus:border-primary-500/40
-           transition-all text-sm;
+    @apply w-full px-3 py-2.5 text-body transition-all;
+    background: var(--bg-inset);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-md);
+    color: var(--text-primary);
+  }
+  .input-field::placeholder {
+    color: var(--text-tertiary);
+  }
+  .input-field:focus {
+    outline: none;
+    border-color: var(--accent-gold);
+    box-shadow: 0 0 0 2px var(--accent-gold-glow);
   }
 
-  /* 버튼 기본 스타일 */
+  /* 버튼: Primary (골드) */
   .btn-primary {
-    @apply px-4 py-2 bg-primary-600 hover:bg-primary-500 text-white
-           rounded-xl font-medium transition-all text-sm
-           focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:ring-offset-2 focus:ring-offset-slate-900
-           active:scale-[0.98];
+    @apply px-4 py-2 font-medium transition-all text-sm;
+    background: var(--accent-gold);
+    color: var(--text-inverse);
+    border-radius: var(--radius-md);
+  }
+  .btn-primary:hover {
+    background: var(--accent-gold-dim);
+  }
+  .btn-primary:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--bg-base), 0 0 0 4px var(--accent-gold);
+  }
+  .btn-primary:active {
+    transform: scale(0.98);
   }
 
+  /* 버튼: Secondary */
   .btn-secondary {
-    @apply px-4 py-2 bg-slate-700/50 hover:bg-slate-700 text-slate-200
-           rounded-xl font-medium transition-all text-sm border border-slate-600/50
-           focus:outline-none focus:ring-2 focus:ring-slate-500/50 focus:ring-offset-2 focus:ring-offset-slate-900
-           active:scale-[0.98];
+    @apply px-4 py-2 font-medium transition-all text-sm;
+    background: transparent;
+    color: var(--text-primary);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-md);
+  }
+  .btn-secondary:hover {
+    background: var(--bg-overlay);
+  }
+  .btn-secondary:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--bg-base), 0 0 0 4px var(--accent-gold);
+  }
+
+  /* 버튼: Ghost */
+  .btn-ghost {
+    @apply px-4 py-2 font-medium transition-all text-sm;
+    background: transparent;
+    color: var(--text-secondary);
+    border-radius: var(--radius-md);
+  }
+  .btn-ghost:hover {
+    background: var(--bg-overlay);
+    color: var(--text-primary);
+  }
+
+  /* 버튼: Danger */
+  .btn-danger {
+    @apply px-4 py-2 font-medium transition-all text-sm;
+    background: var(--status-danger);
+    color: #ffffff;
+    border-radius: var(--radius-md);
+  }
+  .btn-danger:hover {
+    opacity: 0.9;
   }
 
   /* GM 메시지 스타일 */
   .gm-message {
-    @apply bg-amber-900/15 border-l-3 border-amber-500/70 text-amber-50;
+    background: var(--accent-gold-glow);
+    border-left: 3px solid var(--accent-gold);
   }
 
   /* 시스템 메시지 스타일 */
   .system-message {
-    @apply text-slate-400 italic text-sm;
+    color: var(--text-tertiary);
+    font-style: italic;
+    font-size: 0.8125rem;
   }
 
   /* OOC 메시지 스타일 */
   .ooc-message {
-    @apply text-slate-400 text-sm opacity-70;
+    color: var(--text-tertiary);
+    font-size: 0.8125rem;
+    opacity: 0.7;
+  }
+
+  /* 내러티브 텍스트 (GM 서사) */
+  .narrative-text {
+    font-family: 'Crimson Pro', serif;
+    font-size: 1rem;
+    line-height: 1.8;
+    color: var(--text-primary);
+    letter-spacing: 0.01em;
   }
 
   /* HP 바 */
   .hp-bar {
-    @apply h-2.5 rounded-full bg-slate-700/50 overflow-hidden;
+    height: 8px;
+    border-radius: var(--radius-full);
+    background: var(--bg-overlay);
+    overflow: hidden;
   }
   .hp-bar-fill {
-    @apply h-full rounded-full transition-all duration-500;
-  }
-}
-
-@layer utilities {
-  /* 텍스트 그림자 유틸리티 */
-  .text-shadow {
-    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+    height: 100%;
+    border-radius: var(--radius-full);
+    transition: width 300ms ease;
   }
 
-  /* 판타지 글로우 효과 */
-  .glow-amber {
-    box-shadow: 0 0 20px rgba(245, 158, 11, 0.15);
+  /* 배지 */
+  .badge {
+    @apply inline-flex items-center gap-1 text-caption px-2 py-0.5;
+    border-radius: var(--radius-full);
+  }
+  .badge-gold {
+    background: var(--accent-gold-glow);
+    color: var(--accent-gold);
+  }
+  .badge-success {
+    background: rgba(34, 197, 94, 0.15);
+    color: var(--status-success);
+  }
+  .badge-danger {
+    background: rgba(239, 68, 68, 0.15);
+    color: var(--status-danger);
+  }
+  .badge-info {
+    background: rgba(96, 165, 250, 0.15);
+    color: var(--status-info);
+  }
+  .badge-purple {
+    background: rgba(167, 139, 250, 0.15);
+    color: var(--status-purple);
+  }
+  .badge-warning {
+    background: rgba(234, 179, 8, 0.15);
+    color: var(--status-warning);
+  }
+  .badge-default {
+    background: var(--bg-overlay);
+    color: var(--text-secondary);
   }
 
   /* border-l-3 유틸리티 */
   .border-l-3 {
     border-left-width: 3px;
+  }
+}
+
+@layer utilities {
+  .text-shadow {
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+  }
+}
+
+/* 모션 감소 지원 */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
   }
 }

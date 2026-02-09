@@ -24,19 +24,16 @@ const llmProviders = [
     id: 'anthropic',
     name: 'Anthropic (Claude)',
     desc: '고품질 내러티브',
-    color: 'text-orange-400 border-orange-500/30 bg-orange-500/10',
   },
   {
     id: 'openai',
     name: 'OpenAI (GPT-4)',
     desc: '다목적 활용',
-    color: 'text-emerald-400 border-emerald-500/30 bg-emerald-500/10',
   },
   {
     id: 'google',
     name: 'Google (Gemini)',
     desc: '빠른 응답',
-    color: 'text-blue-400 border-blue-500/30 bg-blue-500/10',
   },
 ];
 
@@ -146,23 +143,23 @@ export default function NewSessionPage() {
     <div className="max-w-2xl mx-auto">
       <button
         onClick={() => router.back()}
-        className="flex items-center gap-1 text-sm text-slate-400 hover:text-slate-200 mb-6 transition-colors"
+        className="flex items-center gap-1 text-body-sm text-text-secondary hover:text-text-primary mb-6 transition-colors"
       >
         <ArrowLeft size={16} />
         돌아가기
       </button>
 
       <div className="mb-8">
-        <h2 className="text-2xl font-bold text-slate-100 flex items-center gap-2">
-          <Sparkles size={24} className="text-amber-400" />새 세션 만들기
+        <h2 className="text-heading-1 text-text-primary flex items-center gap-2">
+          <Sparkles size={24} className="text-gold" />새 세션 만들기
         </h2>
-        <p className="text-slate-400 mt-1 text-sm">새로운 TRPG 모험을 시작하세요</p>
+        <p className="text-text-secondary mt-1 text-body-sm">새로운 TRPG 모험을 시작하세요</p>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
         {/* 세션 이름 */}
         <div className="card p-5">
-          <label className="block text-sm font-medium text-slate-200 mb-2">세션 이름</label>
+          <label className="block text-body-sm font-medium text-text-primary mb-2">세션 이름</label>
           <input
             type="text"
             value={formData.name}
@@ -176,7 +173,7 @@ export default function NewSessionPage() {
         {/* 게임 시스템 + 최대 인원 */}
         <div className="card p-5 space-y-4">
           <div>
-            <label className="block text-sm font-medium text-slate-200 mb-2">게임 시스템</label>
+            <label className="block text-body-sm font-medium text-text-primary mb-2">게임 시스템</label>
             <select
               value={formData.system}
               onChange={(e) => setFormData({ ...formData, system: e.target.value })}
@@ -191,7 +188,7 @@ export default function NewSessionPage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-200 mb-2">
+            <label className="block text-body-sm font-medium text-text-primary mb-2">
               최대 플레이어 수
             </label>
             <input
@@ -208,9 +205,9 @@ export default function NewSessionPage() {
 
           {/* 규칙서 선택 */}
           <div>
-            <label className="block text-sm font-medium text-slate-200 mb-2">
+            <label className="block text-body-sm font-medium text-text-primary mb-2">
               규칙서
-              <span className="text-slate-500 font-normal ml-1">(선택사항)</span>
+              <span className="text-text-tertiary font-normal ml-1">(선택사항)</span>
             </label>
             <select
               value={formData.rulebook}
@@ -221,7 +218,7 @@ export default function NewSessionPage() {
               <option value="phb">Player&apos;s Handbook</option>
               <option value="dmg">Dungeon Master&apos;s Guide</option>
             </select>
-            <p className="text-xs text-slate-500 mt-1.5">
+            <p className="text-caption text-text-tertiary mt-1.5">
               업로드된 규칙서를 선택하면 AI GM이 해당 규칙을 참고합니다
             </p>
           </div>
@@ -229,7 +226,7 @@ export default function NewSessionPage() {
 
         {/* LLM 프로바이더 */}
         <div className="card p-5">
-          <label className="block text-sm font-medium text-slate-200 mb-3">AI 프로바이더</label>
+          <label className="block text-body-sm font-medium text-text-primary mb-3">AI 프로바이더</label>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             {llmProviders.map((provider) => {
               const isSelected = formData.provider === provider.id;
@@ -240,22 +237,22 @@ export default function NewSessionPage() {
                   onClick={() => setFormData({ ...formData, provider: provider.id })}
                   className={`p-3.5 rounded-xl border text-left transition-all ${
                     isSelected
-                      ? `${provider.color} border-2`
-                      : 'border-slate-700 bg-slate-700/30 text-slate-300 hover:border-slate-600'
+                      ? 'bg-gold/10 text-gold border-gold border-2'
+                      : 'bg-bg-overlay text-text-secondary border-line hover:border-line-strong'
                   }`}
                 >
-                  <span className="text-sm font-medium block">{provider.name}</span>
-                  <span className="text-xs opacity-70 mt-0.5 block">{provider.desc}</span>
+                  <span className="text-body-sm font-medium block">{provider.name}</span>
+                  <span className="text-caption opacity-70 mt-0.5 block">{provider.desc}</span>
                 </button>
               );
             })}
           </div>
-          <p className="text-xs text-slate-500 mt-2">
+          <p className="text-caption text-text-tertiary mt-2">
             설정 페이지에서 해당 프로바이더의 API 키를 등록해야 합니다
           </p>
 
           <div className="mt-4">
-            <label className="block text-sm font-medium text-slate-200 mb-2">모델</label>
+            <label className="block text-body-sm font-medium text-text-primary mb-2">모델</label>
             <select
               value={formData.model}
               onChange={(e) => setFormData({ ...formData, model: e.target.value })}
@@ -268,7 +265,7 @@ export default function NewSessionPage() {
                 </option>
               ))}
             </select>
-            <p className="text-xs text-slate-500 mt-1.5">
+            <p className="text-caption text-text-tertiary mt-1.5">
               {isLoadingModels
                 ? '모델 목록을 불러오는 중...'
                 : modelSource === 'live'
@@ -282,7 +279,7 @@ export default function NewSessionPage() {
 
         {/* GM 적극성 */}
         <div className="card p-5">
-          <label className="block text-sm font-medium text-slate-200 mb-3">GM 적극성</label>
+          <label className="block text-body-sm font-medium text-text-primary mb-3">GM 적극성</label>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             {gmAggressivenessOptions.map((level) => (
               <button
@@ -296,12 +293,12 @@ export default function NewSessionPage() {
                 }
                 className={`p-3 rounded-xl border text-center transition-all ${
                   formData.gmAggressiveness === level.value
-                    ? 'border-primary-500 bg-primary-600/15 text-primary-400 border-2'
-                    : 'border-slate-700 bg-slate-700/30 text-slate-300 hover:border-slate-600'
+                    ? 'border-gold bg-gold/10 text-gold border-2'
+                    : 'bg-bg-overlay text-text-secondary border-line hover:border-line-strong'
                 }`}
               >
-                <span className="text-sm font-medium block">{level.label}</span>
-                <span className="text-xs text-slate-500 mt-0.5 block">{level.desc}</span>
+                <span className="text-body-sm font-medium block">{level.label}</span>
+                <span className="text-caption text-text-tertiary mt-0.5 block">{level.desc}</span>
               </button>
             ))}
           </div>

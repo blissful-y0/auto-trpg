@@ -86,16 +86,16 @@ export default function DiceRoller({ sessionId }: { sessionId: string }) {
     <div className="p-4 space-y-4">
       {/* 주사위 타입 선택 */}
       <div>
-        <h4 className="text-xs font-medium text-slate-400 mb-2 uppercase tracking-wider">주사위 선택</h4>
+        <h4 className="text-xs font-medium text-text-secondary mb-2 uppercase tracking-wider">주사위 선택</h4>
         <div className="grid grid-cols-4 gap-1.5">
           {diceTypes.map((dice) => (
             <button
               key={dice.sides}
               onClick={() => setSelectedDice(dice.sides)}
-              className={`p-2 rounded-lg text-sm font-medium transition-all ${
+              className={`p-2 rounded-lg text-sm font-medium font-mono transition-all ${
                 selectedDice === dice.sides
-                  ? 'bg-primary-600/20 text-primary-400 border border-primary-500/30 ring-1 ring-primary-500/20'
-                  : 'bg-slate-700/30 text-slate-400 border border-transparent hover:bg-slate-700/50 hover:text-slate-300'
+                  ? 'bg-gold/15 text-gold border border-gold'
+                  : 'bg-bg-overlay text-text-secondary border border-line hover:border-line-strong hover:text-text-primary'
               }`}
             >
               {dice.label}
@@ -107,11 +107,11 @@ export default function DiceRoller({ sessionId }: { sessionId: string }) {
       {/* 개수 및 수정치 */}
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="block text-xs text-slate-500 mb-1.5">개수</label>
+          <label className="block text-xs text-text-tertiary mb-1.5">개수</label>
           <div className="flex items-center gap-1">
             <button
               onClick={() => setCount(Math.max(1, count - 1))}
-              className="p-1.5 rounded-lg bg-slate-700/50 text-slate-400 hover:text-slate-200 transition-colors"
+              className="p-1.5 rounded-lg bg-bg-overlay text-text-secondary hover:text-text-primary transition-colors"
             >
               <Minus size={14} />
             </button>
@@ -121,22 +121,22 @@ export default function DiceRoller({ sessionId }: { sessionId: string }) {
               max={10}
               value={count}
               onChange={(e) => setCount(parseInt(e.target.value) || 1)}
-              className="input-field text-center flex-1"
+              className="input-field text-center flex-1 font-mono"
             />
             <button
               onClick={() => setCount(Math.min(10, count + 1))}
-              className="p-1.5 rounded-lg bg-slate-700/50 text-slate-400 hover:text-slate-200 transition-colors"
+              className="p-1.5 rounded-lg bg-bg-overlay text-text-secondary hover:text-text-primary transition-colors"
             >
               <Plus size={14} />
             </button>
           </div>
         </div>
         <div>
-          <label className="block text-xs text-slate-500 mb-1.5">수정치</label>
+          <label className="block text-xs text-text-tertiary mb-1.5">수정치</label>
           <div className="flex items-center gap-1">
             <button
               onClick={() => setModifier(modifier - 1)}
-              className="p-1.5 rounded-lg bg-slate-700/50 text-slate-400 hover:text-slate-200 transition-colors"
+              className="p-1.5 rounded-lg bg-bg-overlay text-text-secondary hover:text-text-primary transition-colors"
             >
               <Minus size={14} />
             </button>
@@ -144,11 +144,11 @@ export default function DiceRoller({ sessionId }: { sessionId: string }) {
               type="number"
               value={modifier}
               onChange={(e) => setModifier(parseInt(e.target.value) || 0)}
-              className="input-field text-center flex-1"
+              className="input-field text-center flex-1 font-mono"
             />
             <button
               onClick={() => setModifier(modifier + 1)}
-              className="p-1.5 rounded-lg bg-slate-700/50 text-slate-400 hover:text-slate-200 transition-colors"
+              className="p-1.5 rounded-lg bg-bg-overlay text-text-secondary hover:text-text-primary transition-colors"
             >
               <Plus size={14} />
             </button>
@@ -159,7 +159,7 @@ export default function DiceRoller({ sessionId }: { sessionId: string }) {
       {/* 이점/불리 토글 (d20 전용) */}
       {selectedDice === 20 && (
         <div>
-          <label className="block text-xs text-slate-500 mb-1.5">
+          <label className="block text-xs text-text-tertiary mb-1.5">
             이점/불리
           </label>
           <div className="grid grid-cols-3 gap-1.5">
@@ -175,8 +175,8 @@ export default function DiceRoller({ sessionId }: { sessionId: string }) {
                 onClick={() => setAdvantage(opt.key)}
                 className={`py-2 rounded-lg text-xs font-medium transition-all ${
                   advantage === opt.key
-                    ? 'bg-primary-600/20 text-primary-400 border border-primary-500/30'
-                    : 'bg-slate-700/30 text-slate-400 border border-transparent hover:bg-slate-700/50'
+                    ? 'bg-gold/15 text-gold border border-gold'
+                    : 'bg-bg-overlay text-text-secondary border border-line hover:border-line-strong'
                 }`}
               >
                 {opt.label}
@@ -190,8 +190,8 @@ export default function DiceRoller({ sessionId }: { sessionId: string }) {
       <button
         onClick={rollDice}
         disabled={rolling}
-        className={`btn-primary w-full py-3 flex items-center justify-center gap-2 text-base ${
-          rolling ? 'opacity-50 cursor-not-allowed' : 'glow-amber'
+        className={`btn-primary w-full py-3 flex items-center justify-center gap-2 text-base font-mono ${
+          rolling ? 'opacity-50 cursor-not-allowed' : 'shadow-glow'
         }`}
       >
         {rolling ? (
@@ -210,34 +210,34 @@ export default function DiceRoller({ sessionId }: { sessionId: string }) {
       {/* 결과 목록 */}
       {results.length > 0 && (
         <div>
-          <h4 className="text-xs font-medium text-slate-400 mb-2 uppercase tracking-wider">결과</h4>
+          <h4 className="text-xs font-medium text-text-secondary mb-2 uppercase tracking-wider">결과</h4>
           <div className="space-y-1.5">
             {results.map((result, i) => (
               <div
                 key={i}
                 className={`flex items-center justify-between p-2.5 rounded-xl transition-all ${
                   i === 0
-                    ? 'bg-amber-900/20 border border-amber-700/20'
-                    : 'bg-slate-700/20'
+                    ? 'bg-gold/10 border border-gold/20'
+                    : 'bg-bg-overlay'
                 }`}
               >
                 <div>
-                  <span className="text-sm text-slate-300 font-medium">
+                  <span className="text-sm text-text-primary font-medium font-mono">
                     {result.notation}
                   </span>
-                  <span className="text-xs text-slate-500 ml-2">
+                  <span className="text-xs text-text-tertiary ml-2 font-mono">
                     [{result.rolls.join(', ')}]
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
                   <span
-                    className={`font-bold ${
-                      i === 0 ? 'text-amber-400 text-lg' : 'text-slate-300'
+                    className={`font-bold font-mono ${
+                      i === 0 ? 'text-gold text-lg' : 'text-text-primary'
                     }`}
                   >
                     {result.total}
                   </span>
-                  <span className="text-[10px] text-slate-600">
+                  <span className="text-[10px] text-text-tertiary">
                     {result.timestamp}
                   </span>
                 </div>

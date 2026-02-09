@@ -28,9 +28,9 @@ export default function CombatTracker() {
   if (!isInCombat || combatants.length === 0) {
     return (
       <div className="flex flex-col items-center text-center p-6 py-10">
-        <Swords size={28} className="text-slate-600 mb-3" />
-        <p className="text-sm text-slate-500">현재 전투 중이 아닙니다</p>
-        <p className="text-xs text-slate-600 mt-1">
+        <Swords size={28} className="text-text-tertiary mb-3" />
+        <p className="text-sm text-text-tertiary">현재 전투 중이 아닙니다</p>
+        <p className="text-xs text-text-tertiary mt-1">
           전투가 시작되면 이니셔티브 순서가 표시됩니다
         </p>
       </div>
@@ -41,8 +41,8 @@ export default function CombatTracker() {
     <div className="p-4 space-y-4">
       {/* 라운드 카운터 */}
       <div className="flex items-center justify-between">
-        <h4 className="text-xs font-medium text-slate-400 uppercase tracking-wider">전투 트래커</h4>
-        <span className="inline-flex items-center gap-1 text-xs px-2.5 py-1 bg-red-500/15 text-red-400 rounded-full border border-red-500/20">
+        <h4 className="text-xs font-medium text-text-secondary uppercase tracking-wider">전투 트래커</h4>
+        <span className="inline-flex items-center gap-1 text-xs px-2.5 py-1 bg-danger/15 text-danger rounded-full">
           <Swords size={12} />
           라운드 {currentRound}
         </span>
@@ -55,10 +55,10 @@ export default function CombatTracker() {
           const hpPercent = c.hp.max > 0 ? (c.hp.current / c.hp.max) * 100 : 0;
           const hpColor =
             hpPercent > 50
-              ? 'bg-green-500'
+              ? 'bg-success'
               : hpPercent > 25
-                ? 'bg-yellow-500'
-                : 'bg-red-500';
+                ? 'bg-warning'
+                : 'bg-danger';
 
           const conditions = (c as { conditions?: string[] }).conditions ?? [];
 
@@ -67,21 +67,21 @@ export default function CombatTracker() {
               key={c.id}
               className={`flex items-center gap-3 p-2.5 rounded-xl transition-all ${
                 c.isCurrentTurn
-                  ? 'bg-amber-900/20 border border-amber-700/30 ring-1 ring-amber-500/10'
+                  ? 'bg-gold/10 border border-gold/20'
                   : isDead
-                    ? 'opacity-40 bg-slate-800/30'
-                    : 'bg-slate-700/20'
+                    ? 'opacity-40 bg-bg-overlay'
+                    : 'bg-bg-overlay'
               }`}
             >
               {/* 현재 턴 표시 */}
               <div className="w-5 text-center shrink-0">
                 {c.isCurrentTurn && (
-                  <span className="text-amber-400 text-sm">▶</span>
+                  <span className="text-gold text-sm">▶</span>
                 )}
               </div>
 
               {/* 이니셔티브 */}
-              <span className="text-xs text-slate-500 w-6 text-center shrink-0 font-mono">
+              <span className="text-xs text-text-tertiary w-6 text-center shrink-0 font-mono">
                 {c.initiative}
               </span>
 
@@ -89,7 +89,7 @@ export default function CombatTracker() {
               <div className="flex-1 min-w-0">
                 <span
                   className={`text-sm font-medium ${
-                    c.isPlayer ? 'text-primary-400' : 'text-red-400'
+                    c.isPlayer ? 'text-gold' : 'text-danger'
                   } ${isDead ? 'line-through' : ''}`}
                 >
                   {c.name}
@@ -100,7 +100,7 @@ export default function CombatTracker() {
                     {conditions.map((cond: string) => (
                       <span
                         key={cond}
-                        className="text-[10px] px-1 py-0.5 bg-purple-500/15 text-purple-400 rounded"
+                        className="text-[10px] px-1 py-0.5 bg-purple/15 text-purple rounded"
                       >
                         {CONDITION_ICONS[cond] ?? cond}
                       </span>
@@ -111,15 +111,15 @@ export default function CombatTracker() {
 
               {/* HP 바 */}
               <div className="w-20 shrink-0">
-                <div className="h-1.5 rounded-full bg-slate-600/50 overflow-hidden">
+                <div className="h-1.5 rounded-full bg-bg-overlay overflow-hidden">
                   <div
-                    className={`h-full rounded-full transition-all duration-500 ${isDead ? 'bg-slate-500' : hpColor}`}
+                    className={`h-full rounded-full transition-all duration-500 ${isDead ? 'bg-text-tertiary' : hpColor}`}
                     style={{ width: `${Math.max(hpPercent, 0)}%` }}
                   />
                 </div>
                 <div className="flex items-center justify-center gap-0.5 mt-0.5">
-                  <Heart size={8} className="text-slate-600" />
-                  <span className="text-[10px] text-slate-500">
+                  <Heart size={8} className="text-text-tertiary" />
+                  <span className="text-[10px] text-text-tertiary">
                     {c.hp.current}/{c.hp.max}
                   </span>
                 </div>
@@ -127,8 +127,8 @@ export default function CombatTracker() {
 
               {/* AC */}
               <div className="flex items-center gap-0.5 shrink-0">
-                <Shield size={10} className="text-slate-600" />
-                <span className="text-xs text-slate-500">
+                <Shield size={10} className="text-text-tertiary" />
+                <span className="text-xs text-text-tertiary">
                   {c.ac}
                 </span>
               </div>
