@@ -32,14 +32,16 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
       .eq('provider', provider)
       .single();
 
-    const encryptedKey = encrypt(apiKey);
+    const encrypted = encrypt(apiKey);
     const keyHint = createKeyHint(apiKey);
 
     if (existing) {
       const { data: updated, error } = await supabaseAdmin
         .from('user_api_keys')
         .update({
-          encrypted_key: encryptedKey,
+          encrypted_key: encrypted.encryptedKey,
+          iv: encrypted.iv,
+          auth_tag: encrypted.authTag,
           key_hint: keyHint,
           is_valid: null, // 재검증 필요
         })
@@ -58,7 +60,9 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
         .insert({
           user_id: userId,
           provider,
-          encrypted_key: encryptedKey,
+          encrypted_key: encrypted.encryptedKey,
+          iv: encrypted.iv,
+          auth_tag: encrypted.authTag,
           key_hint: keyHint,
         })
         .select('id, provider, key_hint, is_valid, created_at, updated_at')
@@ -127,7 +131,7 @@ router.post('/:provider/validate', async (req: Request, res: Response, next: Nex
     // 저장된 키 조회
     const { data: keyRecord } = await supabaseAdmin
       .from('user_api_keys')
-      .select('id, encrypted_key')
+      .select('id, encrypted_key, iv, auth_tag')
       .eq('user_id', userId)
       .eq('provider', provider)
       .single();
@@ -137,7 +141,7 @@ router.post('/:provider/validate', async (req: Request, res: Response, next: Nex
     }
 
     // 키 복호화
-    const apiKey = decrypt(keyRecord.encrypted_key);
+    const apiKey = decrypt(keyRecord.encrypted_key, keyRecord.iv, keyRecord.auth_tag);
     let isValid = false;
 
     // 프로바이더별 검증 (간단한 API 호출)
@@ -169,10 +173,7 @@ router.post('/:provider/validate', async (req: Request, res: Response, next: Nex
     }
 
     // 검증 결과 저장
-    await supabaseAdmin
-      .from('user_api_keys')
-      .update({ is_valid: isValid })
-      .eq('id', keyRecord.id);
+    await supabaseAdmin.from('user_api_keys').update({ is_valid: isValid }).eq('id', keyRecord.id);
 
     res.json({
       data: {
