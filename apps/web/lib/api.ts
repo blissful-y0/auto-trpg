@@ -1,5 +1,7 @@
 // 게임 서버 API 래퍼
 
+import { createClient } from '@/lib/supabase/client';
+
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_GAME_SERVER_URL ?? 'http://localhost:3001';
 
@@ -9,13 +11,31 @@ interface ApiOptions {
   headers?: Record<string, string>;
 }
 
+// Supabase 세션에서 액세스 토큰 가져오기
+async function getAccessToken(): Promise<string | null> {
+  try {
+    const supabase = createClient();
+    const { data } = await supabase.auth.getSession();
+    return data.session?.access_token ?? null;
+  } catch {
+    return null;
+  }
+}
+
 async function fetchApi<T>(endpoint: string, options: ApiOptions = {}): Promise<T> {
   const { method = 'GET', body, headers = {} } = options;
+
+  // 인증 토큰 자동 추가
+  const token = await getAccessToken();
+  const authHeaders: Record<string, string> = token
+    ? { Authorization: `Bearer ${token}` }
+    : {};
 
   const res = await fetch(`${API_BASE_URL}${endpoint}`, {
     method,
     headers: {
       'Content-Type': 'application/json',
+      ...authHeaders,
       ...headers,
     },
     body: body ? JSON.stringify(body) : undefined,
@@ -68,8 +88,14 @@ export const rulebookApi = {
     const formData = new FormData();
     formData.append('file', file);
 
+    const token = await getAccessToken();
+    const headers: Record<string, string> = token
+      ? { Authorization: `Bearer ${token}` }
+      : {};
+
     const res = await fetch(`${API_BASE_URL}/api/rulebooks/upload`, {
       method: 'POST',
+      headers,
       body: formData,
     });
 
