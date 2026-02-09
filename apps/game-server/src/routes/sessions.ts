@@ -2,6 +2,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { supabaseAdmin } from '../lib/supabase';
 import { AppError } from '../middleware/errorHandler';
+import { assertSessionParticipant } from '../lib/authorization';
 
 const router = Router();
 
@@ -79,8 +80,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
       .select('session_id')
       .eq('user_id', userId);
 
-    const sessionIds =
-      participations?.map((p: { session_id: string }) => p.session_id) || [];
+    const sessionIds = participations?.map((p: { session_id: string }) => p.session_id) || [];
 
     // 생성했거나 참가 중인 세션 조회
     const { data: sessions, error } = await supabaseAdmin
@@ -103,6 +103,10 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
 router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
+    const userId = req.user!.id;
+
+    // 참가자 확인 (IDOR 방지: 참가자만 세션 상세 조회 가능)
+    await assertSessionParticipant(id as string, userId);
 
     // 세션 기본 정보
     const { data: session, error: sessionError } = await supabaseAdmin

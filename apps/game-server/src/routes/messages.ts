@@ -3,6 +3,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { supabaseAdmin } from '../lib/supabase';
 import { AppError } from '../middleware/errorHandler';
+import { assertSessionParticipant } from '../lib/authorization';
 
 const router = Router({ mergeParams: true });
 
@@ -10,6 +11,11 @@ const router = Router({ mergeParams: true });
 router.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { sessionId } = req.params;
+    const userId = req.user!.id;
+
+    // 참가자 확인 (IDOR 방지: 참가자만 메시지 조회 가능)
+    await assertSessionParticipant(sessionId as string, userId);
+
     const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
     const before = req.query.before as string;
 
@@ -41,13 +47,17 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { sessionId } = req.params;
     const userId = req.user!.id;
+
+    // 참가자 확인 (IDOR 방지: 참가자만 메시지 작성 가능)
+    await assertSessionParticipant(sessionId as string, userId);
+
     const { content, type } = req.body;
 
     if (!content || typeof content !== 'string') {
       throw new AppError(400, '메시지 내용이 필요합니다.');
     }
 
-    const senderType = type === 'ooc' ? 'player' : (type || 'player');
+    const senderType = type === 'ooc' ? 'player' : type || 'player';
     const isOOC = type === 'ooc';
 
     const { data, error } = await supabaseAdmin
