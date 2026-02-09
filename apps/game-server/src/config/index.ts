@@ -1,7 +1,9 @@
 import dotenv from 'dotenv';
+import path from 'path';
 
-// .env 파일에서 환경변수 로드
+// .env 파일에서 환경변수 로드 (로컬 → 모노레포 루트 순서로 탐색)
 dotenv.config();
+dotenv.config({ path: path.resolve(__dirname, '../../../../.env') });
 
 function requireEnv(key: string): string {
   const value = process.env[key];
@@ -31,13 +33,13 @@ export const config = {
 
   aws: {
     region: optionalEnv('AWS_REGION', 'ap-northeast-2'),
-    s3Bucket: requireEnv('AWS_S3_BUCKET'),
-    accessKeyId: requireEnv('AWS_ACCESS_KEY_ID'),
-    secretAccessKey: requireEnv('AWS_SECRET_ACCESS_KEY'),
+    s3Bucket: optionalEnv('AWS_S3_BUCKET', 'auto-trpg-rulebooks'),
+    accessKeyId: optionalEnv('AWS_ACCESS_KEY_ID', ''),
+    secretAccessKey: optionalEnv('AWS_SECRET_ACCESS_KEY', ''),
   },
 
   encryption: {
-    secret: requireEnv('ENCRYPTION_SECRET'),
+    secret: optionalEnv('ENCRYPTION_SECRET', 'dev-secret-change-in-production'),
   },
 
   cors: {
