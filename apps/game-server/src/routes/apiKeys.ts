@@ -3,6 +3,8 @@ import { z } from 'zod';
 import { supabaseAdmin } from '../lib/supabase';
 import { encrypt, decrypt, createKeyHint } from '../lib/crypto';
 import { AppError } from '../middleware/errorHandler';
+import { listProviderModels, type ProviderModelCatalog } from '../services/llm/modelCatalog';
+import type { LLMProviderId } from '../services/llm/provider';
 
 const router = Router();
 
@@ -11,6 +13,17 @@ const registerKeySchema = z.object({
   provider: z.enum(['claude', 'openai', 'gemini']),
   apiKey: z.string().min(10).max(500),
 });
+
+const providerParamSchema = z.object({
+  provider: z.enum(['claude', 'openai', 'gemini']),
+});
+
+const MODEL_LIST_CACHE_TTL_MS = 60_000;
+const modelListCache = new Map<string, { expiresAt: number; data: ProviderModelCatalog }>();
+
+function cacheKey(userId: string, provider: LLMProviderId): string {
+  return `${userId}:${provider}`;
+}
 
 // POST /api/keys — API 키 등록
 router.post('/', async (req: Request, res: Response, next: NextFunction) => {
@@ -100,6 +113,49 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
   }
 });
 
+// GET /api/keys/:provider/models — 해당 프로바이더 최신 모델 목록
+router.get('/:provider/models', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const userId = req.user!.id;
+    const parsed = providerParamSchema.safeParse(req.params);
+
+    if (!parsed.success) {
+      throw new AppError(400, `provider 파라미터가 올바르지 않습니다: ${parsed.error.message}`);
+    }
+
+    const provider = parsed.data.provider;
+    const key = cacheKey(userId, provider);
+    const cached = modelListCache.get(key);
+    if (cached && cached.expiresAt > Date.now()) {
+      res.json({ data: cached.data });
+      return;
+    }
+
+    const { data: keyRecord } = await supabaseAdmin
+      .from('user_api_keys')
+      .select('encrypted_key, iv, auth_tag')
+      .eq('user_id', userId)
+      .eq('provider', provider)
+      .single();
+
+    if (!keyRecord) {
+      throw new AppError(404, `${provider} API 키가 등록되지 않았습니다.`);
+    }
+
+    const apiKey = decrypt(keyRecord.encrypted_key, keyRecord.iv, keyRecord.auth_tag);
+    const data = await listProviderModels(provider, apiKey);
+
+    modelListCache.set(key, {
+      expiresAt: Date.now() + MODEL_LIST_CACHE_TTL_MS,
+      data,
+    });
+
+    res.json({ data });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // DELETE /api/keys/:provider — API 키 삭제
 router.delete('/:provider', async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -126,7 +182,11 @@ router.delete('/:provider', async (req: Request, res: Response, next: NextFuncti
 router.post('/:provider/validate', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const userId = req.user!.id;
-    const { provider } = req.params;
+    const parsed = providerParamSchema.safeParse(req.params);
+    if (!parsed.success) {
+      throw new AppError(400, `provider 파라미터가 올바르지 않습니다: ${parsed.error.message}`);
+    }
+    const provider = parsed.data.provider;
 
     // 저장된 키 조회
     const { data: keyRecord } = await supabaseAdmin

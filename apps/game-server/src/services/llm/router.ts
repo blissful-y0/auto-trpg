@@ -3,15 +3,16 @@
  *
  * 사용자가 등록한 프로바이더 기반으로 최적의 모델을 자동 라우팅.
  */
-import type {
-  LLMProvider,
-  LLMProviderId,
-  ModelRouting,
-  TaskType,
-} from './provider';
+import type { LLMProvider, LLMProviderId, ModelRouting, TaskType } from './provider';
 import { ClaudeProvider } from './claude';
 import { OpenAIProvider } from './openai';
 import { GeminiProvider } from './gemini';
+
+interface ProviderSelectionOptions {
+  userProviders?: LLMProviderId[];
+  preferredProvider?: LLMProviderId;
+  preferredModel?: string;
+}
 
 /** 작업별 기본 라우팅 설정 (우선순위 낮을수록 우선) */
 const DEFAULT_ROUTING: Record<TaskType, ModelRouting[]> = {
@@ -30,16 +31,11 @@ const DEFAULT_ROUTING: Record<TaskType, ModelRouting[]> = {
     { providerId: 'gemini', model: 'gemini-2.0-flash', priority: 2 },
     { providerId: 'claude', model: 'claude-haiku-3-5-20241022', priority: 3 },
   ],
-  embedding: [
-    { providerId: 'openai', model: 'text-embedding-3-small', priority: 1 },
-  ],
+  embedding: [{ providerId: 'openai', model: 'text-embedding-3-small', priority: 1 }],
 };
 
 /** 프로바이더별 팩토리 */
-const PROVIDER_FACTORIES: Record<
-  LLMProviderId,
-  (apiKey: string) => LLMProvider
-> = {
+const PROVIDER_FACTORIES: Record<LLMProviderId, (apiKey: string) => LLMProvider> = {
   claude: (apiKey) => new ClaudeProvider(apiKey),
   openai: (apiKey) => new OpenAIProvider(apiKey),
   gemini: (apiKey) => new GeminiProvider(apiKey),
@@ -73,11 +69,28 @@ export class LLMRouter {
     taskType: TaskType,
     userProviders?: LLMProviderId[],
   ): { provider: LLMProvider; model: string } {
-    const availableProviders = userProviders ?? [...this.apiKeys.keys()];
+    return this.getProviderForTask(taskType, { userProviders });
+  }
+
+  getProviderForTask(
+    taskType: TaskType,
+    options: ProviderSelectionOptions = {},
+  ): { provider: LLMProvider; model: string } {
+    const availableProviders = options.userProviders ?? [...this.apiKeys.keys()];
     const routingOptions = this.routing[taskType];
 
     if (!routingOptions || routingOptions.length === 0) {
       throw new Error(`작업 유형 '${taskType}'에 대한 라우팅 설정이 없습니다.`);
+    }
+
+    if (options.preferredProvider && availableProviders.includes(options.preferredProvider)) {
+      const provider = this.getOrCreateProvider(options.preferredProvider);
+      const fallbackModel = this.getDefaultModelForProvider(taskType, options.preferredProvider);
+      const model = options.preferredModel || fallbackModel;
+
+      if (model) {
+        return { provider, model };
+      }
     }
 
     // 우선순위 정렬 후 사용 가능한 프로바이더 찾기
@@ -94,6 +107,18 @@ export class LLMRouter {
       `작업 유형 '${taskType}'에 사용 가능한 프로바이더가 없습니다. ` +
         `필요한 프로바이더: ${sorted.map((o) => o.providerId).join(', ')}`,
     );
+  }
+
+  private getDefaultModelForProvider(
+    taskType: TaskType,
+    providerId: LLMProviderId,
+  ): string | undefined {
+    const options = this.routing[taskType] ?? [];
+    const found = options
+      .filter((option) => option.providerId === providerId)
+      .sort((a, b) => a.priority - b.priority)[0];
+
+    return found?.model;
   }
 
   /** 특정 프로바이더 직접 가져오기 */
@@ -113,9 +138,7 @@ export class LLMRouter {
 
     const apiKey = this.apiKeys.get(providerId);
     if (!apiKey) {
-      throw new Error(
-        `프로바이더 '${providerId}'의 API 키가 등록되지 않았습니다.`,
-      );
+      throw new Error(`프로바이더 '${providerId}'의 API 키가 등록되지 않았습니다.`);
     }
 
     const factory = PROVIDER_FACTORIES[providerId];

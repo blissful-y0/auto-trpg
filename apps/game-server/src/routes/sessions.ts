@@ -12,6 +12,7 @@ const createSessionSchema = z.object({
   gameSystem: z.string().min(1).max(50),
   maxPlayers: z.number().int().min(1).max(8).default(4),
   primaryProvider: z.enum(['claude', 'openai', 'gemini']),
+  primaryModel: z.string().min(1).max(200).optional(),
   gmAggressiveness: z.enum(['passive', 'moderate', 'aggressive']).default('moderate'),
   rulebookIds: z.array(z.string().uuid()).optional(),
 });
@@ -24,8 +25,15 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
       throw new AppError(400, `요청 데이터가 올바르지 않습니다: ${parsed.error.message}`);
     }
 
-    const { name, gameSystem, maxPlayers, primaryProvider, gmAggressiveness, rulebookIds } =
-      parsed.data;
+    const {
+      name,
+      gameSystem,
+      maxPlayers,
+      primaryProvider,
+      primaryModel,
+      gmAggressiveness,
+      rulebookIds,
+    } = parsed.data;
     const userId = req.user!.id;
 
     // 세션 생성
@@ -37,6 +45,12 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
         max_players: maxPlayers,
         primary_provider: primaryProvider,
         gm_aggressiveness: gmAggressiveness,
+        settings: {
+          llm: {
+            provider: primaryProvider,
+            ...(primaryModel ? { model: primaryModel } : {}),
+          },
+        },
         created_by: userId,
         status: 'waiting',
       })
@@ -252,6 +266,8 @@ const updateSessionSchema = z.object({
   status: z.enum(['waiting', 'active', 'paused', 'completed']).optional(),
   world_state: z.record(z.unknown()).optional(),
   name: z.string().min(1).max(100).optional(),
+  primaryProvider: z.enum(['claude', 'openai', 'gemini']).optional(),
+  primaryModel: z.string().min(1).max(200).optional(),
 });
 
 // PATCH /api/sessions/:id — 세션 상태 변경 (생성자만)
@@ -263,7 +279,7 @@ router.patch('/:id', async (req: Request, res: Response, next: NextFunction) => 
     // 생성자 확인
     const { data: session } = await supabaseAdmin
       .from('game_sessions')
-      .select('created_by')
+      .select('created_by, primary_provider, settings')
       .eq('id', id)
       .single();
 
@@ -280,9 +296,49 @@ router.patch('/:id', async (req: Request, res: Response, next: NextFunction) => 
       throw new AppError(400, `요청 데이터가 올바르지 않습니다: ${parsed.error.message}`);
     }
 
+    const payload: Record<string, unknown> = {};
+
+    if (parsed.data.status) {
+      payload.status = parsed.data.status;
+    }
+    if (parsed.data.world_state) {
+      payload.world_state = parsed.data.world_state;
+    }
+    if (parsed.data.name) {
+      payload.name = parsed.data.name;
+    }
+    if (parsed.data.primaryProvider) {
+      payload.primary_provider = parsed.data.primaryProvider;
+    }
+
+    if (parsed.data.primaryProvider || parsed.data.primaryModel) {
+      const baseSettings =
+        session.settings && typeof session.settings === 'object' && !Array.isArray(session.settings)
+          ? (session.settings as Record<string, unknown>)
+          : {};
+
+      const existingLlm =
+        baseSettings.llm && typeof baseSettings.llm === 'object' && !Array.isArray(baseSettings.llm)
+          ? (baseSettings.llm as Record<string, unknown>)
+          : {};
+
+      const nextProvider =
+        parsed.data.primaryProvider ?? session.primary_provider ?? existingLlm.provider;
+      const nextModel = parsed.data.primaryModel ?? existingLlm.model;
+
+      payload.settings = {
+        ...baseSettings,
+        llm: {
+          ...existingLlm,
+          ...(nextProvider ? { provider: nextProvider } : {}),
+          ...(nextModel ? { model: nextModel } : {}),
+        },
+      };
+    }
+
     const { data: updated, error } = await supabaseAdmin
       .from('game_sessions')
-      .update(parsed.data)
+      .update(payload)
       .eq('id', id)
       .select()
       .single();

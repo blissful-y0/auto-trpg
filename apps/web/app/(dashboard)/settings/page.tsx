@@ -13,6 +13,11 @@ interface ApiKey {
   isValid: boolean | null;
 }
 
+interface ProviderModel {
+  id: string;
+  label: string;
+}
+
 const providerConfig: Record<string, { name: string; placeholder: string; color: string }> = {
   openai: { name: 'OpenAI', placeholder: 'sk-...', color: 'text-emerald-400' },
   anthropic: { name: 'Anthropic', placeholder: 'sk-ant-...', color: 'text-orange-400' },
@@ -52,12 +57,16 @@ export default function SettingsPage() {
   const [validating, setValidating] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [modelProvider, setModelProvider] = useState('anthropic');
+  const [modelSource, setModelSource] = useState<'live' | 'static' | null>(null);
+  const [providerModels, setProviderModels] = useState<ProviderModel[]>([]);
+  const [loadingModels, setLoadingModels] = useState(false);
 
   // API 키 목록 로드
   const loadKeys = async () => {
     try {
       setLoadError(null);
-      const res = await settingsApi.getApiKeys() as any;
+      const res = (await settingsApi.getApiKeys()) as any;
       const keys = res?.data || [];
       setApiKeys(mapApiKeysFromBackend(keys));
     } catch (err: any) {
@@ -68,7 +77,31 @@ export default function SettingsPage() {
     }
   };
 
-  useEffect(() => { loadKeys(); }, []);
+  useEffect(() => {
+    loadKeys();
+  }, []);
+
+  const loadProviderModels = async (frontendProvider: string, silent = false) => {
+    setLoadingModels(true);
+    try {
+      const backendProvider = providerToBackend[frontendProvider] || frontendProvider;
+      const res = (await settingsApi.getProviderModels(backendProvider)) as any;
+      setModelSource(res?.data?.source ?? null);
+      setProviderModels(res?.data?.models ?? []);
+    } catch (err: any) {
+      setModelSource(null);
+      setProviderModels([]);
+      if (!silent) {
+        toast.error(err.message || '모델 목록을 불러오지 못했습니다');
+      }
+    } finally {
+      setLoadingModels(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadProviderModels(modelProvider, true);
+  }, [modelProvider]);
 
   const handleAddKey = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -107,24 +140,16 @@ export default function SettingsPage() {
     setValidating(key.id);
     try {
       const backendProvider = providerToBackend[key.provider] || key.provider;
-      const res = await settingsApi.validateApiKey(backendProvider) as any;
+      const res = (await settingsApi.validateApiKey(backendProvider)) as any;
       const isValid = res?.data?.isValid ?? false;
-      setApiKeys(
-        apiKeys.map((k) =>
-          k.id === key.id ? { ...k, isValid } : k,
-        ),
-      );
+      setApiKeys(apiKeys.map((k) => (k.id === key.id ? { ...k, isValid } : k)));
       if (isValid) {
         toast.success('API 키가 유효합니다');
       } else {
         toast.error('API 키가 유효하지 않습니다');
       }
     } catch (err: any) {
-      setApiKeys(
-        apiKeys.map((k) =>
-          k.id === key.id ? { ...k, isValid: false } : k,
-        ),
-      );
+      setApiKeys(apiKeys.map((k) => (k.id === key.id ? { ...k, isValid: false } : k)));
       toast.error(err.message || '검증에 실패했습니다');
     } finally {
       setValidating(null);
@@ -163,22 +188,83 @@ export default function SettingsPage() {
         <p className="text-slate-400 mt-1">API 키 및 계정 설정을 관리하세요</p>
       </div>
 
+      {/* 제공 모델 목록 */}
+      <div className="card p-6 mb-6">
+        <div className="mb-4">
+          <h3 className="text-lg font-semibold text-slate-100 mb-1">제공 모델 목록</h3>
+          <p className="text-sm text-slate-400">등록된 API 키로 최신 모델 목록을 조회합니다.</p>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+          <div>
+            <label className="block text-xs text-slate-500 mb-1">프로바이더</label>
+            <select
+              value={modelProvider}
+              onChange={(e) => setModelProvider(e.target.value)}
+              className="input-field"
+            >
+              {Object.entries(providerConfig).map(([id, config]) => (
+                <option key={id} value={id}>
+                  {config.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="sm:col-span-2 flex items-end">
+            <button
+              onClick={() => loadProviderModels(modelProvider)}
+              disabled={loadingModels}
+              className="btn-primary w-full sm:w-auto disabled:opacity-50 flex items-center justify-center gap-2"
+              type="button"
+            >
+              {loadingModels ? (
+                <>
+                  <Loader2 size={16} className="animate-spin" />
+                  조회 중...
+                </>
+              ) : (
+                '모델 새로고침'
+              )}
+            </button>
+          </div>
+        </div>
+
+        <div className="text-xs text-slate-500 mb-3">
+          {modelSource === 'live' && '실시간 모델 목록'}
+          {modelSource === 'static' && '정적 fallback 모델 목록'}
+          {modelSource === null && '모델 목록을 조회하세요'}
+        </div>
+
+        {providerModels.length > 0 ? (
+          <div className="max-h-56 overflow-auto rounded-lg border border-slate-700/50 bg-slate-800/40 p-2 space-y-1">
+            {providerModels.map((model) => (
+              <div
+                key={model.id}
+                className="px-3 py-2 rounded-md bg-slate-700/30 text-sm text-slate-200"
+              >
+                <div className="font-medium">{model.label || model.id}</div>
+                <div className="text-xs text-slate-500 mt-0.5">{model.id}</div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="text-sm text-slate-500">조회된 모델이 없습니다.</div>
+        )}
+      </div>
+
       {/* API 키 관리 섹션 */}
       <div className="card p-6 mb-6">
         <div className="mb-6">
-          <h3 className="text-lg font-semibold text-slate-100 mb-1">
-            API 키 관리
-          </h3>
+          <h3 className="text-lg font-semibold text-slate-100 mb-1">API 키 관리</h3>
           <p className="text-sm text-slate-400">
-            BYOK(Bring Your Own Key) — 각 AI 프로바이더의 API 키를 등록하면 해당
-            모델을 사용할 수 있습니다.
+            BYOK(Bring Your Own Key) — 각 AI 프로바이더의 API 키를 등록하면 해당 모델을 사용할 수
+            있습니다.
           </p>
         </div>
 
         {loading ? (
           <div className="flex items-center justify-center py-8 text-slate-400">
-            <Loader2 size={20} className="animate-spin mr-2" />
-            키 목록 불러오는 중...
+            <Loader2 size={20} className="animate-spin mr-2" />키 목록 불러오는 중...
           </div>
         ) : loadError ? (
           <div className="flex flex-col items-center py-8">
@@ -200,7 +286,10 @@ export default function SettingsPage() {
                     className="flex items-center gap-3 p-4 bg-slate-700/30 rounded-xl border border-slate-700/50 hover:border-slate-600/50 transition-colors"
                   >
                     <div className="w-10 h-10 rounded-lg bg-slate-700 flex items-center justify-center shrink-0">
-                      <Key size={18} className={providerConfig[key.provider]?.color || 'text-slate-400'} />
+                      <Key
+                        size={18}
+                        className={providerConfig[key.provider]?.color || 'text-slate-400'}
+                      />
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-0.5">
@@ -209,9 +298,7 @@ export default function SettingsPage() {
                         </span>
                         {validityBadge(key.isValid)}
                       </div>
-                      <p className="text-xs text-slate-500 font-mono">
-                        {key.hint}
-                      </p>
+                      <p className="text-xs text-slate-500 font-mono">{key.hint}</p>
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
                       <button
@@ -255,8 +342,7 @@ export default function SettingsPage() {
         {/* 새 키 등록 */}
         <div className="pt-4 border-t border-slate-700/50">
           <h4 className="text-sm font-medium text-slate-300 mb-3 flex items-center gap-2">
-            <Plus size={16} />
-            새 API 키 등록
+            <Plus size={16} />새 API 키 등록
           </h4>
           <form onSubmit={handleAddKey} className="space-y-3">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -280,9 +366,7 @@ export default function SettingsPage() {
                   type="password"
                   value={newKeyValue}
                   onChange={(e) => setNewKeyValue(e.target.value)}
-                  placeholder={
-                    providerConfig[newKeyProvider]?.placeholder ?? 'API 키 입력'
-                  }
+                  placeholder={providerConfig[newKeyProvider]?.placeholder ?? 'API 키 입력'}
                   className="input-field"
                 />
               </div>
@@ -299,8 +383,7 @@ export default function SettingsPage() {
                 </>
               ) : (
                 <>
-                  <Plus size={16} />
-                  키 등록
+                  <Plus size={16} />키 등록
                 </>
               )}
             </button>
@@ -314,15 +397,48 @@ export default function SettingsPage() {
         <ul className="text-xs text-slate-500 space-y-1.5">
           <li className="flex items-start gap-2">
             <span className="text-orange-400 mt-0.5">{'>'}</span>
-            <span>Anthropic: <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer" className="text-primary-400 hover:underline">console.anthropic.com</a>에서 발급</span>
+            <span>
+              Anthropic:{' '}
+              <a
+                href="https://console.anthropic.com/settings/keys"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-primary-400 hover:underline"
+              >
+                console.anthropic.com
+              </a>
+              에서 발급
+            </span>
           </li>
           <li className="flex items-start gap-2">
             <span className="text-emerald-400 mt-0.5">{'>'}</span>
-            <span>OpenAI: <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer" className="text-primary-400 hover:underline">platform.openai.com</a>에서 발급</span>
+            <span>
+              OpenAI:{' '}
+              <a
+                href="https://platform.openai.com/api-keys"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-primary-400 hover:underline"
+              >
+                platform.openai.com
+              </a>
+              에서 발급
+            </span>
           </li>
           <li className="flex items-start gap-2">
             <span className="text-blue-400 mt-0.5">{'>'}</span>
-            <span>Google AI: <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" className="text-primary-400 hover:underline">aistudio.google.com</a>에서 발급</span>
+            <span>
+              Google AI:{' '}
+              <a
+                href="https://aistudio.google.com/apikey"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-primary-400 hover:underline"
+              >
+                aistudio.google.com
+              </a>
+              에서 발급
+            </span>
           </li>
         </ul>
       </div>

@@ -1,10 +1,15 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { Loader2, ArrowLeft, Sparkles } from 'lucide-react';
-import { sessionApi } from '@/lib/api';
+import { sessionApi, settingsApi } from '@/lib/api';
+
+interface ProviderModel {
+  id: string;
+  label: string;
+}
 
 const gameSystems = [
   { id: 'dnd5e', name: 'D&D 5th Edition' },
@@ -15,9 +20,24 @@ const gameSystems = [
 ];
 
 const llmProviders = [
-  { id: 'anthropic', name: 'Anthropic (Claude)', desc: '고품질 내러티브', color: 'text-orange-400 border-orange-500/30 bg-orange-500/10' },
-  { id: 'openai', name: 'OpenAI (GPT-4)', desc: '다목적 활용', color: 'text-emerald-400 border-emerald-500/30 bg-emerald-500/10' },
-  { id: 'google', name: 'Google (Gemini)', desc: '빠른 응답', color: 'text-blue-400 border-blue-500/30 bg-blue-500/10' },
+  {
+    id: 'anthropic',
+    name: 'Anthropic (Claude)',
+    desc: '고품질 내러티브',
+    color: 'text-orange-400 border-orange-500/30 bg-orange-500/10',
+  },
+  {
+    id: 'openai',
+    name: 'OpenAI (GPT-4)',
+    desc: '다목적 활용',
+    color: 'text-emerald-400 border-emerald-500/30 bg-emerald-500/10',
+  },
+  {
+    id: 'google',
+    name: 'Google (Gemini)',
+    desc: '빠른 응답',
+    color: 'text-blue-400 border-blue-500/30 bg-blue-500/10',
+  },
 ];
 
 const gmAggressivenessOptions = [
@@ -45,14 +65,57 @@ const aggressivenessMapping: Record<number, string> = {
 export default function NewSessionPage() {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingModels, setIsLoadingModels] = useState(false);
+  const [providerModels, setProviderModels] = useState<ProviderModel[]>([]);
+  const [modelSource, setModelSource] = useState<'live' | 'static' | null>(null);
   const [formData, setFormData] = useState({
     name: '',
     system: 'dnd5e',
     maxPlayers: 4,
     rulebook: '',
     provider: 'anthropic',
+    model: '',
     gmAggressiveness: 2,
   });
+
+  useEffect(() => {
+    const loadProviderModels = async () => {
+      setIsLoadingModels(true);
+      try {
+        const backendProvider = providerMapping[formData.provider];
+        const res = (await settingsApi.getProviderModels(backendProvider)) as {
+          data?: {
+            source?: 'live' | 'static';
+            models?: ProviderModel[];
+          };
+        };
+
+        const models = res.data?.models ?? [];
+        setProviderModels(models);
+        setModelSource(res.data?.source ?? null);
+
+        setFormData((prev: typeof formData) => {
+          const hasCurrentModel = models.some((model) => model.id === prev.model);
+          if (hasCurrentModel) {
+            return prev;
+          }
+
+          return {
+            ...prev,
+            model: models[0]?.id ?? '',
+          };
+        });
+      } catch {
+        setProviderModels([]);
+        setModelSource(null);
+        setFormData((prev: typeof formData) => ({ ...prev, model: '' }));
+      } finally {
+        setIsLoadingModels(false);
+      }
+    };
+
+    void loadProviderModels();
+  }, [formData.provider]);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -62,13 +125,14 @@ export default function NewSessionPage() {
     }
     setIsLoading(true);
     try {
-      const res = await sessionApi.create({
+      const res = (await sessionApi.create({
         name: formData.name,
         gameSystem: formData.system,
         maxPlayers: formData.maxPlayers,
         primaryProvider: providerMapping[formData.provider],
+        ...(formData.model ? { primaryModel: formData.model } : {}),
         gmAggressiveness: aggressivenessMapping[formData.gmAggressiveness],
-      }) as any;
+      })) as any;
       toast.success('세션이 생성되었습니다');
       router.push(`/session/${res.data.id}`);
     } catch (err: any) {
@@ -90,8 +154,7 @@ export default function NewSessionPage() {
 
       <div className="mb-8">
         <h2 className="text-2xl font-bold text-slate-100 flex items-center gap-2">
-          <Sparkles size={24} className="text-amber-400" />
-          새 세션 만들기
+          <Sparkles size={24} className="text-amber-400" />새 세션 만들기
         </h2>
         <p className="text-slate-400 mt-1 text-sm">새로운 TRPG 모험을 시작하세요</p>
       </div>
@@ -99,15 +162,11 @@ export default function NewSessionPage() {
       <form onSubmit={handleSubmit} className="space-y-6">
         {/* 세션 이름 */}
         <div className="card p-5">
-          <label className="block text-sm font-medium text-slate-200 mb-2">
-            세션 이름
-          </label>
+          <label className="block text-sm font-medium text-slate-200 mb-2">세션 이름</label>
           <input
             type="text"
             value={formData.name}
-            onChange={(e) =>
-              setFormData({ ...formData, name: e.target.value })
-            }
+            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
             placeholder="예: 잃어버린 광산의 판델버"
             className="input-field"
             required
@@ -117,14 +176,10 @@ export default function NewSessionPage() {
         {/* 게임 시스템 + 최대 인원 */}
         <div className="card p-5 space-y-4">
           <div>
-            <label className="block text-sm font-medium text-slate-200 mb-2">
-              게임 시스템
-            </label>
+            <label className="block text-sm font-medium text-slate-200 mb-2">게임 시스템</label>
             <select
               value={formData.system}
-              onChange={(e) =>
-                setFormData({ ...formData, system: e.target.value })
-              }
+              onChange={(e) => setFormData({ ...formData, system: e.target.value })}
               className="input-field"
             >
               {gameSystems.map((sys) => (
@@ -159,9 +214,7 @@ export default function NewSessionPage() {
             </label>
             <select
               value={formData.rulebook}
-              onChange={(e) =>
-                setFormData({ ...formData, rulebook: e.target.value })
-              }
+              onChange={(e) => setFormData({ ...formData, rulebook: e.target.value })}
               className="input-field"
             >
               <option value="">규칙서 없이 시작</option>
@@ -176,9 +229,7 @@ export default function NewSessionPage() {
 
         {/* LLM 프로바이더 */}
         <div className="card p-5">
-          <label className="block text-sm font-medium text-slate-200 mb-3">
-            AI 프로바이더
-          </label>
+          <label className="block text-sm font-medium text-slate-200 mb-3">AI 프로바이더</label>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             {llmProviders.map((provider) => {
               const isSelected = formData.provider === provider.id;
@@ -186,9 +237,7 @@ export default function NewSessionPage() {
                 <button
                   key={provider.id}
                   type="button"
-                  onClick={() =>
-                    setFormData({ ...formData, provider: provider.id })
-                  }
+                  onClick={() => setFormData({ ...formData, provider: provider.id })}
                   className={`p-3.5 rounded-xl border text-left transition-all ${
                     isSelected
                       ? `${provider.color} border-2`
@@ -204,13 +253,36 @@ export default function NewSessionPage() {
           <p className="text-xs text-slate-500 mt-2">
             설정 페이지에서 해당 프로바이더의 API 키를 등록해야 합니다
           </p>
+
+          <div className="mt-4">
+            <label className="block text-sm font-medium text-slate-200 mb-2">모델</label>
+            <select
+              value={formData.model}
+              onChange={(e) => setFormData({ ...formData, model: e.target.value })}
+              className="input-field"
+              disabled={isLoadingModels || providerModels.length === 0}
+            >
+              {providerModels.map((model) => (
+                <option key={model.id} value={model.id}>
+                  {model.label || model.id}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-slate-500 mt-1.5">
+              {isLoadingModels
+                ? '모델 목록을 불러오는 중...'
+                : modelSource === 'live'
+                  ? '실시간 모델 목록'
+                  : modelSource === 'static'
+                    ? '정적 fallback 모델 목록'
+                    : '등록된 키가 없거나 모델 목록을 조회할 수 없습니다'}
+            </p>
+          </div>
         </div>
 
         {/* GM 적극성 */}
         <div className="card p-5">
-          <label className="block text-sm font-medium text-slate-200 mb-3">
-            GM 적극성
-          </label>
+          <label className="block text-sm font-medium text-slate-200 mb-3">GM 적극성</label>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             {gmAggressivenessOptions.map((level) => (
               <button

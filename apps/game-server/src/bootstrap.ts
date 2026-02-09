@@ -18,9 +18,34 @@ import { ContextManager } from './services/context/ContextManager';
  * 4. GameEngine 반환
  */
 export async function createGameEngineForSession(
-  _sessionId: string,
+  sessionId: string,
   userId: string,
 ): Promise<GameEngine> {
+  const { data: sessionRow } = await supabaseAdmin
+    .from('game_sessions')
+    .select('primary_provider, settings')
+    .eq('id', sessionId)
+    .single();
+
+  const settings =
+    sessionRow?.settings &&
+    typeof sessionRow.settings === 'object' &&
+    !Array.isArray(sessionRow.settings)
+      ? (sessionRow.settings as Record<string, unknown>)
+      : null;
+  const llmSettings =
+    settings?.llm && typeof settings.llm === 'object' && !Array.isArray(settings.llm)
+      ? (settings.llm as Record<string, unknown>)
+      : null;
+
+  const preferredProvider =
+    (sessionRow?.primary_provider as LLMProviderId | undefined) ??
+    (llmSettings?.provider as LLMProviderId | undefined);
+  const preferredModel =
+    typeof llmSettings?.model === 'string' && llmSettings.model.length > 0
+      ? llmSettings.model
+      : undefined;
+
   // 1. 사용자 API 키 로드
   const { data: keyRecords } = await supabaseAdmin
     .from('user_api_keys')
@@ -49,7 +74,10 @@ export async function createGameEngineForSession(
       // GameEngine이 기대하는 { call } 인터페이스로 래핑
       llmWrapper = {
         call: async (messages: unknown[], tools: unknown[]): Promise<GMResponse> => {
-          const { provider, model } = llmRouter.getProvider('gm_response');
+          const { provider, model } = llmRouter.getProviderForTask('gm_response', {
+            preferredProvider,
+            preferredModel,
+          });
 
           // GM_TOOLS → LLMToolDefinition 변환
           const toolDefs = (
