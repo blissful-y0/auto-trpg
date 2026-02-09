@@ -10,6 +10,7 @@ import sessionsRouter from './routes/sessions';
 import charactersRouter from './routes/characters';
 import rulebooksRouter from './routes/rulebooks';
 import apiKeysRouter from './routes/apiKeys';
+import messagesRouter from './routes/messages';
 
 const app = express();
 
@@ -26,6 +27,7 @@ app.use('/api/sessions', authMiddleware, sessionsRouter);
 app.use('/api', authMiddleware, charactersRouter);
 app.use('/api/rulebooks', authMiddleware, rulebooksRouter);
 app.use('/api/keys', authMiddleware, apiKeysRouter);
+app.use('/api/sessions/:sessionId/messages', authMiddleware, messagesRouter);
 
 // 전역 에러 핸들러
 app.use(errorHandler);

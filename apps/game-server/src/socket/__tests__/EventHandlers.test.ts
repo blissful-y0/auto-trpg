@@ -3,6 +3,33 @@ import { RoomManager } from '../RoomManager';
 import { ActionQueue } from '../ActionQueue';
 import { registerHandlers } from '../EventHandlers';
 
+// bootstrap 모듈 모킹 — GameEngine 생성 시 DB 접근 차단
+vi.mock('../../bootstrap', () => ({
+  createGameEngineForSession: vi.fn().mockResolvedValue({
+    processAction: vi.fn().mockResolvedValue({
+      narrative: '[테스트] GM 응답입니다.',
+      stateChanges: [],
+    }),
+  }),
+}));
+
+// supabaseAdmin 모킹
+vi.mock('../../lib/supabase', () => ({
+  supabaseAdmin: {
+    from: vi.fn(() => ({
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({
+        data: { id: 'session-1', name: '테스트 세션', game_system: 'dnd5e', world_state: {} },
+        error: null,
+      }),
+      insert: vi.fn().mockReturnValue({
+        then: vi.fn((cb: (v: unknown) => void) => { cb({ error: null }); return { catch: vi.fn() }; }),
+      }),
+    })),
+  },
+}));
+
 // Socket.io 목(mock) 생성 헬퍼
 function createMockSocket() {
   const handlers: Record<string, (...args: unknown[]) => void> = {};
@@ -114,14 +141,14 @@ describe('EventHandlers', () => {
     // ActionQueue가 비동기이므로 대기
     await new Promise((r) => setTimeout(r, 50));
 
-    // gm:response 브로드캐스트 (에코 응답)
+    // gm:response 브로드캐스트 (GameEngine 응답)
     expect(io.to).toHaveBeenCalledWith('session-1');
     expect(io._emit).toHaveBeenCalledWith(
       'gm:response',
       expect.objectContaining({
         sessionId: 'session-1',
         response: expect.objectContaining({
-          narrative: '[에코] 주변을 살펴봅니다.',
+          narrative: '[테스트] GM 응답입니다.',
         }),
       }),
     );

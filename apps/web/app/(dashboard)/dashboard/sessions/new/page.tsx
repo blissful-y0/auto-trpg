@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { sessionApi } from '@/lib/api';
 
 const gameSystems = [
   { id: 'dnd5e', name: 'D&D 5th Edition' },
@@ -17,15 +18,31 @@ const llmProviders = [
   { id: 'google', name: 'Google (Gemini)' },
 ];
 
-const gmAggressiveness = [
+const gmAggressivenessOptions = [
   { value: 1, label: '온건', desc: '플레이어에게 유리한 판정' },
   { value: 2, label: '보통', desc: '균형 잡힌 판정' },
   { value: 3, label: '도전적', desc: '규칙에 엄격한 판정' },
   { value: 4, label: '무자비', desc: '플레이어에게 불리한 판정' },
 ];
 
+// 백엔드 프로바이더 이름 매핑
+const providerMapping: Record<string, string> = {
+  openai: 'openai',
+  anthropic: 'claude',
+  google: 'gemini',
+};
+
+// 백엔드 GM 적극성 매핑
+const aggressivenessMapping: Record<number, string> = {
+  1: 'passive',
+  2: 'moderate',
+  3: 'aggressive',
+  4: 'aggressive',
+};
+
 export default function NewSessionPage() {
   const router = useRouter();
+  const [isLoading, setIsLoading] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     system: 'dnd5e',
@@ -35,11 +52,23 @@ export default function NewSessionPage() {
     gmAggressiveness: 2,
   });
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    // TODO: API 호출하여 세션 생성
-    console.log('세션 생성:', formData);
-    router.push('/dashboard');
+    setIsLoading(true);
+    try {
+      const res = await sessionApi.create({
+        name: formData.name,
+        gameSystem: formData.system,
+        maxPlayers: formData.maxPlayers,
+        primaryProvider: providerMapping[formData.provider],
+        gmAggressiveness: aggressivenessMapping[formData.gmAggressiveness],
+      }) as any;
+      router.push(`/session/${res.data.id}`);
+    } catch (err: any) {
+      alert(err.message || '세션 생성에 실패했습니다.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -154,7 +183,7 @@ export default function NewSessionPage() {
             GM 적극성
           </label>
           <div className="space-y-2">
-            {gmAggressiveness.map((level) => (
+            {gmAggressivenessOptions.map((level) => (
               <label
                 key={level.value}
                 className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
@@ -187,13 +216,18 @@ export default function NewSessionPage() {
 
         {/* 제출 버튼 */}
         <div className="flex gap-3 pt-4">
-          <button type="submit" className="btn-primary flex-1">
-            세션 생성
+          <button
+            type="submit"
+            disabled={isLoading}
+            className="btn-primary flex-1 disabled:opacity-50"
+          >
+            {isLoading ? '생성 중...' : '세션 생성'}
           </button>
           <button
             type="button"
             onClick={() => router.back()}
             className="btn-secondary"
+            disabled={isLoading}
           >
             취소
           </button>

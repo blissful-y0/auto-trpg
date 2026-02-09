@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { getSocket } from '@/lib/socket';
 
 const diceTypes = [
   { sides: 4, label: 'd4' },
@@ -19,43 +20,67 @@ interface DiceResult {
   timestamp: string;
 }
 
-export default function DiceRoller() {
+export default function DiceRoller({ sessionId }: { sessionId: string }) {
   const [selectedDice, setSelectedDice] = useState(20);
   const [count, setCount] = useState(1);
   const [modifier, setModifier] = useState(0);
   const [advantage, setAdvantage] = useState<'normal' | 'advantage' | 'disadvantage'>('normal');
   const [results, setResults] = useState<DiceResult[]>([]);
+  const [rolling, setRolling] = useState(false);
 
-  const rollDice = () => {
-    let rolls: number[] = [];
-    const actualCount =
-      advantage !== 'normal' && selectedDice === 20 ? 2 : count;
+  // 서버에서 dice:result 이벤트 수신
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket) return;
 
-    for (let i = 0; i < actualCount; i++) {
-      rolls.push(Math.floor(Math.random() * selectedDice) + 1);
-    }
+    const handleDiceResult = (payload: {
+      sessionId: string;
+      userId: string;
+      dice: string;
+      count: number;
+      modifier: number;
+      rolls: number[];
+      total: number;
+      reason: string;
+    }) => {
+      if (payload.sessionId !== sessionId) return;
 
-    let finalRolls = rolls;
-    if (advantage === 'advantage' && selectedDice === 20) {
-      finalRolls = [Math.max(...rolls)];
-    } else if (advantage === 'disadvantage' && selectedDice === 20) {
-      finalRolls = [Math.min(...rolls)];
-    }
-
-    const total =
-      finalRolls.reduce((sum, r) => sum + r, 0) + modifier;
-
-    const result: DiceResult = {
-      notation: `${count}d${selectedDice}${modifier !== 0 ? (modifier > 0 ? `+${modifier}` : modifier.toString()) : ''}`,
-      rolls,
-      total,
-      timestamp: new Date().toLocaleTimeString('ko-KR', {
-        hour: '2-digit',
-        minute: '2-digit',
-      }),
+      const result: DiceResult = {
+        notation: `${payload.count}${payload.dice}${payload.modifier !== 0 ? (payload.modifier > 0 ? `+${payload.modifier}` : payload.modifier.toString()) : ''}`,
+        rolls: payload.rolls,
+        total: payload.total,
+        timestamp: new Date().toLocaleTimeString('ko-KR', {
+          hour: '2-digit',
+          minute: '2-digit',
+        }),
+      };
+      setResults((prev) => [result, ...prev].slice(0, 10));
+      setRolling(false);
     };
 
-    setResults((prev) => [result, ...prev].slice(0, 10));
+    socket.on('dice:result', handleDiceResult);
+    return () => {
+      socket.off('dice:result', handleDiceResult);
+    };
+  }, [sessionId]);
+
+  const rollDice = () => {
+    const socket = getSocket();
+    if (!socket) return;
+
+    setRolling(true);
+
+    // advantage/disadvantage일 때는 count=2로 서버에 전송
+    // 서버는 count만큼 주사위를 굴리고 합계 반환
+    const actualCount = advantage !== 'normal' && selectedDice === 20 ? 2 : count;
+
+    socket.emit('dice:roll', {
+      sessionId,
+      dice: `d${selectedDice}`,
+      count: actualCount,
+      modifier,
+      reason: advantage !== 'normal' ? `${advantage === 'advantage' ? '이점' : '불리'}` : '',
+    });
   };
 
   return (
@@ -137,10 +162,13 @@ export default function DiceRoller() {
       {/* 굴리기 버튼 */}
       <button
         onClick={rollDice}
-        className="btn-primary w-full text-lg py-3 glow-amber"
+        disabled={rolling}
+        className={`btn-primary w-full text-lg py-3 glow-amber ${rolling ? 'opacity-50 cursor-not-allowed' : ''}`}
       >
-        🎲 {count}d{selectedDice}
-        {modifier !== 0 ? (modifier > 0 ? `+${modifier}` : modifier) : ''} 굴리기
+        {rolling ? '굴리는 중...' : (
+          <>🎲 {count}d{selectedDice}
+          {modifier !== 0 ? (modifier > 0 ? `+${modifier}` : modifier) : ''} 굴리기</>
+        )}
       </button>
 
       {/* 결과 목록 */}
