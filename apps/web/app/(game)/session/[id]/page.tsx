@@ -8,7 +8,7 @@ import { useSocket } from '@/lib/hooks/useSocket';
 import { useGameSocket } from '@/lib/hooks/useGameSocket';
 import { useGameStore } from '@/lib/stores/gameStore';
 import { useChatStore } from '@/lib/stores/chatStore';
-import { sessionApi, chatApi, ApiError } from '@/lib/api';
+import { sessionApi, chatApi, settingsApi, ApiError } from '@/lib/api';
 import { User, Dice5, Swords, BookOpen, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import ChatPanel from './components/ChatPanel';
 import CharacterSheet from './components/CharacterSheet';
@@ -17,6 +17,19 @@ import CombatTracker from './components/CombatTracker';
 import NarrativeLog from './components/NarrativeLog';
 
 type RightPanel = 'character' | 'dice' | 'combat' | 'narrative';
+
+type ProviderId = 'claude' | 'openai' | 'gemini';
+
+interface ProviderModel {
+  id: string;
+  label: string;
+}
+
+const providerLabel: Record<ProviderId, string> = {
+  claude: 'Anthropic (Claude)',
+  openai: 'OpenAI',
+  gemini: 'Google (Gemini)',
+};
 
 const panelTabs: { key: RightPanel; label: string; icon: React.ElementType }[] = [
   { key: 'character', label: '캐릭터', icon: User },
@@ -31,14 +44,20 @@ export default function GameSessionPage() {
 
   // Supabase 세션에서 토큰 가져오기
   const [token, setToken] = useState<string | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [readyForRealtime, setReadyForRealtime] = useState(false);
   const { session, setSession } = useGameStore();
   const { addMessage, clearMessages } = useChatStore();
+  const [availableModels, setAvailableModels] = useState<ProviderModel[]>([]);
+  const [loadingModels, setLoadingModels] = useState(false);
+  const [savingModel, setSavingModel] = useState(false);
+  const [modelSource, setModelSource] = useState<'live' | 'static' | null>(null);
 
   useEffect(() => {
     const supabase = createClient();
     supabase.auth.getSession().then(({ data: { session } }) => {
       setToken(session?.access_token ?? null);
+      setCurrentUserId(session?.user?.id ?? null);
     });
   }, []);
 
@@ -120,6 +139,72 @@ export default function GameSessionPage() {
 
   const sessionName = (session as any)?.name || '게임 세션';
   const gameSystem = (session as any)?.game_system || '';
+  const primaryProvider = ((session as any)?.primary_provider ?? 'claude') as ProviderId;
+  const selectedModel = ((session as any)?.settings?.llm?.model as string | undefined) ?? '';
+  const canEditModel = currentUserId != null && (session as any)?.created_by === currentUserId;
+
+  useEffect(() => {
+    if (!primaryProvider) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadModels = async () => {
+      setLoadingModels(true);
+      try {
+        const res = (await settingsApi.getProviderModels(primaryProvider)) as {
+          data?: {
+            source?: 'live' | 'static';
+            models?: ProviderModel[];
+          };
+        };
+
+        if (cancelled) return;
+
+        setModelSource(res.data?.source ?? null);
+        setAvailableModels(res.data?.models ?? []);
+      } catch {
+        if (cancelled) return;
+        setModelSource(null);
+        setAvailableModels([]);
+      } finally {
+        if (cancelled) return;
+        setLoadingModels(false);
+      }
+    };
+
+    void loadModels();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [primaryProvider]);
+
+  const handleModelChange = async (model: string) => {
+    if (!canEditModel || !model) {
+      return;
+    }
+
+    setSavingModel(true);
+    try {
+      const updated = (await sessionApi.update(sessionId, {
+        primaryProvider,
+        primaryModel: model,
+      })) as any;
+
+      if (updated?.data) {
+        setSession(updated.data);
+      }
+
+      toast.success('세션 모델 설정이 업데이트되었습니다');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : '세션 모델 업데이트에 실패했습니다';
+      toast.error(message);
+    } finally {
+      setSavingModel(false);
+    }
+  };
 
   return (
     <div className="flex h-full">
@@ -174,6 +259,41 @@ export default function GameSessionPage() {
                 </button>
               );
             })}
+          </div>
+
+          <div className="border-b border-slate-700/50 px-3 py-3 space-y-2">
+            <div className="text-[11px] text-slate-500">
+              현재 프로바이더: {providerLabel[primaryProvider]}
+            </div>
+            <select
+              value={selectedModel}
+              onChange={(e) => {
+                void handleModelChange(e.target.value);
+              }}
+              disabled={
+                !canEditModel || savingModel || loadingModels || availableModels.length === 0
+              }
+              className="input-field text-sm"
+            >
+              {availableModels.map((model) => (
+                <option key={model.id} value={model.id}>
+                  {model.label || model.id}
+                </option>
+              ))}
+            </select>
+            <div className="text-[11px] text-slate-500">
+              {!canEditModel
+                ? '세션 생성자만 모델을 변경할 수 있습니다'
+                : savingModel
+                  ? '모델 설정 저장 중...'
+                  : loadingModels
+                    ? '모델 목록 조회 중...'
+                    : modelSource === 'live'
+                      ? '실시간 모델 목록'
+                      : modelSource === 'static'
+                        ? '정적 fallback 모델 목록'
+                        : '모델 목록을 조회하지 못했습니다'}
+            </div>
           </div>
 
           {/* 패널 내용 */}

@@ -77,6 +77,8 @@ export const sessionApi = {
   create: (data: unknown) =>
     fetchApi<{ data: unknown }>('/api/sessions', { method: 'POST', body: data }),
   join: (id: string) => fetchApi<{ data: unknown }>(`/api/sessions/${id}/join`, { method: 'POST' }),
+  update: (id: string, data: unknown) =>
+    fetchApi<{ data: unknown }>(`/api/sessions/${id}`, { method: 'PATCH', body: data }),
 };
 
 // 캐릭터 API
@@ -145,4 +147,12 @@ export const settingsApi = {
         method: 'POST',
       },
     ),
+  getProviderModels: (provider: string) =>
+    fetchApi<{
+      data: {
+        provider: string;
+        source: 'live' | 'static';
+        models: Array<{ id: string; label: string }>;
+      };
+    }>(`/api/keys/${provider}/models`),
 };
