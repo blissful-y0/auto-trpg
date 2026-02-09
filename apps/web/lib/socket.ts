@@ -3,55 +3,121 @@ import { io, type Socket } from 'socket.io-client';
 const SOCKET_URL =
   process.env.NEXT_PUBLIC_GAME_SERVER_URL ?? 'http://localhost:3001';
 
-let socket: Socket | null = null;
+// 서버 → 클라이언트 이벤트 타입
+interface ServerEvents {
+  'gm:response': (payload: {
+    sessionId: string;
+    response: { narrative: string; stateChanges?: unknown[] };
+    timestamp: string;
+  }) => void;
+  'gm:stream': (payload: {
+    sessionId: string;
+    chunk: string;
+    done: boolean;
+  }) => void;
+  'game:stateUpdate': (payload: {
+    sessionId: string;
+    changes: unknown[];
+    fullState?: Record<string, unknown>;
+  }) => void;
+  'player:joined': (payload: {
+    sessionId: string;
+    userId: string;
+    characterId: string;
+    name: string;
+  }) => void;
+  'player:left': (payload: {
+    sessionId: string;
+    userId: string;
+    name: string;
+  }) => void;
+  'dice:result': (payload: {
+    sessionId: string;
+    userId: string;
+    dice: string;
+    count: number;
+    modifier: number;
+    rolls: number[];
+    total: number;
+    reason: string;
+  }) => void;
+  'combat:update': (payload: {
+    sessionId: string;
+    combatState: unknown;
+  }) => void;
+  'error': (payload: { code: string; message: string }) => void;
+}
 
-// Socket.io 클라이언트 연결 (Phase 2 연동 기본 구조)
-export function getSocket(): Socket {
-  if (!socket) {
-    socket = io(SOCKET_URL, {
-      autoConnect: false,
-      transports: ['websocket'],
-    });
-  }
+// 클라이언트 → 서버 이벤트 타입
+interface ClientEvents {
+  'player:action': (payload: {
+    sessionId: string;
+    characterId: string;
+    action: string;
+    message: string;
+  }) => void;
+  'player:join': (payload: {
+    sessionId: string;
+    characterId: string;
+  }) => void;
+  'player:leave': (payload: { sessionId: string }) => void;
+  'dice:roll': (payload: {
+    sessionId: string;
+    dice: string;
+    count: number;
+    modifier: number;
+    reason: string;
+  }) => void;
+  'chat:message': (payload: {
+    sessionId: string;
+    content: string;
+    isOOC: boolean;
+  }) => void;
+  'game:start': (payload: { sessionId: string }) => void;
+  'combat:action': (payload: {
+    sessionId: string;
+    characterId: string;
+    action: string;
+    targetId?: string;
+  }) => void;
+}
+
+export type TypedSocket = Socket<ServerEvents, ClientEvents>;
+
+let socket: TypedSocket | null = null;
+
+// Socket.io 클라이언트 인스턴스 (싱글톤)
+export function getSocket(): TypedSocket | null {
   return socket;
 }
 
-export function connectToSession(sessionId: string, token: string) {
-  const s = getSocket();
+// 세션 연결
+export function connectToSession(sessionId: string, token: string): TypedSocket {
+  // 기존 연결이 있으면 종료
+  if (socket) {
+    socket.disconnect();
+  }
 
-  s.auth = { token };
-  s.connect();
+  socket = io(SOCKET_URL, {
+    autoConnect: false,
+    transports: ['websocket', 'polling'],
+    auth: { token },
+  }) as TypedSocket;
 
-  s.emit('join_session', { sessionId });
+  socket.connect();
 
-  return s;
+  // 연결 후 세션 참가
+  socket.on('connect', () => {
+    socket?.emit('player:join', { sessionId, characterId: '' });
+  });
+
+  return socket;
 }
 
-export function disconnectSocket() {
+// 연결 종료
+export function disconnectSocket(): void {
   if (socket) {
     socket.disconnect();
     socket = null;
   }
-}
-
-// 소켓 이벤트 타입
-export interface SocketEvents {
-  // 서버 → 클라이언트
-  'gm_response_start': () => void;
-  'gm_response_chunk': (data: { chunk: string }) => void;
-  'gm_response_end': (data: { fullMessage: string }) => void;
-  'dice_result': (data: {
-    notation: string;
-    rolls: number[];
-    total: number;
-    roller: string;
-  }) => void;
-  'player_joined': (data: { playerId: string; nickname: string }) => void;
-  'player_left': (data: { playerId: string }) => void;
-  'combat_update': (data: unknown) => void;
-
-  // 클라이언트 → 서버
-  'send_message': (data: { content: string; isOOC: boolean }) => void;
-  'roll_dice': (data: { notation: string }) => void;
-  'join_session': (data: { sessionId: string }) => void;
 }
