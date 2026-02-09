@@ -1,34 +1,39 @@
 'use client';
 
-// Mock 캐릭터 데이터
-const mockCharacter = {
-  name: '아라곤',
-  race: '인간',
-  class: '레인저',
-  level: 3,
-  hp: { current: 24, max: 30 },
-  ac: 15,
-  abilities: {
-    STR: { score: 14, modifier: 2 },
-    DEX: { score: 16, modifier: 3 },
-    CON: { score: 13, modifier: 1 },
-    INT: { score: 10, modifier: 0 },
-    WIS: { score: 15, modifier: 2 },
-    CHA: { score: 11, modifier: 0 },
-  },
-  inventory: [
-    '롱소드',
-    '숏보우 (화살 20개)',
-    '가죽 갑옷',
-    '탐험가 배낭',
-    '밧줄 (50ft)',
-    '치료 포션 x2',
-  ],
+import { useGameStore } from '@/lib/stores/gameStore';
+
+// 상태이상 한글 매핑
+const CONDITION_NAMES: Record<string, string> = {
+  blinded: '실명',
+  charmed: '매혹',
+  deafened: '청각상실',
+  exhaustion: '피로',
+  frightened: '공포',
+  grappled: '잡기',
+  incapacitated: '무력화',
+  invisible: '투명',
+  paralyzed: '마비',
+  petrified: '석화',
+  poisoned: '중독',
+  prone: '엎드림',
+  restrained: '속박',
+  stunned: '기절',
+  unconscious: '의식불명',
 };
 
 export default function CharacterSheet() {
-  const char = mockCharacter;
-  const hpPercent = (char.hp.current / char.hp.max) * 100;
+  const { character } = useGameStore();
+
+  // 캐릭터 데이터가 없으면 기본 안내 표시
+  if (!character) {
+    return (
+      <div className="p-4 text-center">
+        <p className="text-sm text-slate-500">캐릭터를 선택해주세요.</p>
+      </div>
+    );
+  }
+
+  const hpPercent = character.hp.max > 0 ? (character.hp.current / character.hp.max) * 100 : 0;
   const hpColor =
     hpPercent > 50
       ? 'bg-green-500'
@@ -36,13 +41,16 @@ export default function CharacterSheet() {
         ? 'bg-yellow-500'
         : 'bg-red-500';
 
+  // 상태이상 (character에 conditions 필드가 있으면)
+  const conditions: string[] = (character as { conditions?: string[] }).conditions ?? [];
+
   return (
     <div className="p-4 space-y-4">
       {/* 기본 정보 */}
       <div className="text-center pb-4 border-b border-slate-700">
-        <h3 className="text-lg font-bold text-amber-400">{char.name}</h3>
+        <h3 className="text-lg font-bold text-amber-400">{character.name}</h3>
         <p className="text-sm text-slate-400">
-          {char.race} {char.class} (Lv.{char.level})
+          {character.race} {character.class} (Lv.{character.level})
         </p>
       </div>
 
@@ -51,21 +59,38 @@ export default function CharacterSheet() {
         <div className="flex justify-between text-sm mb-1">
           <span className="text-slate-300">HP</span>
           <span className="text-slate-400">
-            {char.hp.current}/{char.hp.max}
+            {character.hp.current}/{character.hp.max}
           </span>
         </div>
         <div className="hp-bar">
           <div
-            className={`hp-bar-fill ${hpColor}`}
+            className={`hp-bar-fill ${hpColor} transition-all duration-300`}
             style={{ width: `${hpPercent}%` }}
           />
         </div>
       </div>
 
+      {/* 상태이상 */}
+      {conditions.length > 0 && (
+        <div>
+          <h4 className="text-sm font-medium text-slate-300 mb-2">상태이상</h4>
+          <div className="flex flex-wrap gap-1">
+            {conditions.map((cond) => (
+              <span
+                key={cond}
+                className="text-xs px-2 py-1 bg-purple-500/20 text-purple-400 rounded-lg border border-purple-500/30"
+              >
+                {CONDITION_NAMES[cond] ?? cond}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* AC */}
       <div className="flex items-center justify-between p-3 bg-slate-700/50 rounded-lg">
         <span className="text-sm text-slate-300">방어도 (AC)</span>
-        <span className="text-xl font-bold text-slate-100">{char.ac}</span>
+        <span className="text-xl font-bold text-slate-100">{character.ac}</span>
       </div>
 
       {/* 능력치 */}
@@ -73,7 +98,7 @@ export default function CharacterSheet() {
         <h4 className="text-sm font-medium text-slate-300 mb-2">능력치</h4>
         <div className="grid grid-cols-3 gap-2">
           {(
-            Object.entries(char.abilities) as [
+            Object.entries(character.abilities) as [
               string,
               { score: number; modifier: number },
             ][]
@@ -99,7 +124,7 @@ export default function CharacterSheet() {
       <div>
         <h4 className="text-sm font-medium text-slate-300 mb-2">인벤토리</h4>
         <ul className="space-y-1">
-          {char.inventory.map((item, i) => (
+          {character.inventory.map((item, i) => (
             <li
               key={i}
               className="text-sm text-slate-400 flex items-center gap-2"
