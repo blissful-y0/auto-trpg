@@ -14,23 +14,28 @@
 
   /* 스크롤바 다크 테마 */
   ::-webkit-scrollbar {
-    @apply w-2;
+    @apply w-1.5;
   }
   ::-webkit-scrollbar-track {
-    @apply bg-slate-800;
+    @apply bg-transparent;
   }
   ::-webkit-scrollbar-thumb {
-    @apply bg-slate-600 rounded-full;
+    @apply bg-slate-600/50 rounded-full;
   }
   ::-webkit-scrollbar-thumb:hover {
-    @apply bg-slate-500;
+    @apply bg-slate-500/70;
+  }
+
+  /* select 요소 다크 모드 */
+  select option {
+    @apply bg-slate-800 text-slate-100;
   }
 }
 
 @layer components {
   /* 카드 컴포넌트 기본 스타일 */
   .card {
-    @apply bg-slate-800 border border-slate-700 rounded-lg shadow-lg;
+    @apply bg-slate-800/80 border border-slate-700/50 rounded-xl shadow-lg;
   }
 
   /* 판타지 테마 보더 */
@@ -40,28 +45,30 @@
 
   /* 입력 필드 기본 스타일 */
   .input-field {
-    @apply w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg
-           text-slate-100 placeholder-slate-400
-           focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent
-           transition-colors;
+    @apply w-full px-3 py-2.5 bg-slate-800/80 border border-slate-600/50 rounded-xl
+           text-slate-100 placeholder-slate-500
+           focus:outline-none focus:ring-2 focus:ring-primary-500/40 focus:border-primary-500/40
+           transition-all text-sm;
   }
 
   /* 버튼 기본 스타일 */
   .btn-primary {
-    @apply px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white
-           rounded-lg font-medium transition-colors
-           focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 focus:ring-offset-slate-900;
+    @apply px-4 py-2 bg-primary-600 hover:bg-primary-500 text-white
+           rounded-xl font-medium transition-all text-sm
+           focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:ring-offset-2 focus:ring-offset-slate-900
+           active:scale-[0.98];
   }
 
   .btn-secondary {
-    @apply px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200
-           rounded-lg font-medium transition-colors
-           focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2 focus:ring-offset-slate-900;
+    @apply px-4 py-2 bg-slate-700/50 hover:bg-slate-700 text-slate-200
+           rounded-xl font-medium transition-all text-sm border border-slate-600/50
+           focus:outline-none focus:ring-2 focus:ring-slate-500/50 focus:ring-offset-2 focus:ring-offset-slate-900
+           active:scale-[0.98];
   }
 
   /* GM 메시지 스타일 */
   .gm-message {
-    @apply bg-amber-900/20 border-l-4 border-amber-500 text-amber-50;
+    @apply bg-amber-900/15 border-l-3 border-amber-500/70 text-amber-50;
   }
 
   /* 시스템 메시지 스타일 */
@@ -76,10 +83,10 @@
 
   /* HP 바 */
   .hp-bar {
-    @apply h-3 rounded-full bg-slate-700 overflow-hidden;
+    @apply h-2.5 rounded-full bg-slate-700/50 overflow-hidden;
   }
   .hp-bar-fill {
-    @apply h-full rounded-full transition-all duration-300;
+    @apply h-full rounded-full transition-all duration-500;
   }
 }
 
@@ -92,5 +99,10 @@
   /* 판타지 글로우 효과 */
   .glow-amber {
     box-shadow: 0 0 20px rgba(245, 158, 11, 0.15);
+  }
+
+  /* border-l-3 유틸리티 */
+  .border-l-3 {
+    border-left-width: 3px;
   }
 }
