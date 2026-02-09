@@ -104,18 +104,18 @@ export const rulebookApi = {
   },
 };
 
-// 설정 API
+// 설정 API — 백엔드 경로: /api/keys
 export const settingsApi = {
-  getApiKeys: () => fetchApi<unknown[]>('/api/settings/api-keys'),
-  addApiKey: (provider: string, key: string) =>
-    fetchApi<unknown>('/api/settings/api-keys', {
+  getApiKeys: () => fetchApi<{ data: unknown[] }>('/api/keys'),
+  addApiKey: (provider: string, apiKey: string) =>
+    fetchApi<unknown>('/api/keys', {
       method: 'POST',
-      body: { provider, key },
+      body: { provider, apiKey },
     }),
-  deleteApiKey: (id: string) =>
-    fetchApi<unknown>(`/api/settings/api-keys/${id}`, { method: 'DELETE' }),
-  validateApiKey: (id: string) =>
-    fetchApi<unknown>(`/api/settings/api-keys/${id}/validate`, {
+  deleteApiKey: (provider: string) =>
+    fetchApi<unknown>(`/api/keys/${provider}`, { method: 'DELETE' }),
+  validateApiKey: (provider: string) =>
+    fetchApi<unknown>(`/api/keys/${provider}/validate`, {
       method: 'POST',
     }),
 };
