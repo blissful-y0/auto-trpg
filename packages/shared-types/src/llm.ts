@@ -115,6 +115,7 @@ export interface UserAPIKey {
   provider: LLMProviderId;
   encryptedKey: string;
   iv: string;
+  authTag: string;
   keyHint: string;
   isValid: boolean;
   createdAt: string;
