@@ -53,8 +53,8 @@ export default function RulebookUploadPage() {
 
   return (
     <div className="max-w-2xl mx-auto">
-      <h2 className="text-2xl font-bold text-slate-100 mb-2">규칙서 업로드</h2>
-      <p className="text-slate-400 mb-8">
+      <h2 className="text-heading-1 text-text-primary mb-2">규칙서 업로드</h2>
+      <p className="text-text-secondary mb-8">
         PDF 형식의 TRPG 규칙서를 업로드하세요
       </p>
 
@@ -67,8 +67,8 @@ export default function RulebookUploadPage() {
         onClick={() => inputRef.current?.click()}
         className={`border-2 border-dashed rounded-lg p-12 text-center cursor-pointer transition-colors ${
           dragActive
-            ? 'border-primary-500 bg-primary-600/10'
-            : 'border-slate-600 hover:border-slate-500'
+            ? 'border-gold bg-gold/10'
+            : 'border-line-strong hover:border-line-strong'
         }`}
       >
         <input
@@ -81,15 +81,15 @@ export default function RulebookUploadPage() {
         <div className="text-4xl mb-4">📄</div>
         {file ? (
           <div>
-            <p className="text-slate-200 font-medium">{file.name}</p>
-            <p className="text-sm text-slate-400 mt-1">
+            <p className="text-text-primary font-medium">{file.name}</p>
+            <p className="text-body-sm text-text-secondary mt-1">
               {(file.size / (1024 * 1024)).toFixed(2)} MB
             </p>
           </div>
         ) : (
           <div>
-            <p className="text-slate-300">파일을 드래그하거나 클릭하여 선택</p>
-            <p className="text-sm text-slate-500 mt-1">PDF 파일만 지원</p>
+            <p className="text-text-secondary">파일을 드래그하거나 클릭하여 선택</p>
+            <p className="text-body-sm text-text-tertiary mt-1">PDF 파일만 지원</p>
           </div>
         )}
       </div>
@@ -98,12 +98,12 @@ export default function RulebookUploadPage() {
       {uploading && (
         <div className="mt-6">
           <div className="flex justify-between text-sm mb-2">
-            <span className="text-slate-300">업로드 중...</span>
-            <span className="text-slate-400">{progress}%</span>
+            <span className="text-text-secondary">업로드 중...</span>
+            <span className="text-text-tertiary">{progress}%</span>
           </div>
-          <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
+          <div className="h-2 bg-bg-overlay rounded-full overflow-hidden">
             <div
-              className="h-full bg-primary-500 rounded-full transition-all duration-300"
+              className="h-full bg-gold rounded-full transition-all duration-300"
               style={{ width: `${progress}%` }}
             />
           </div>
@@ -111,8 +111,8 @@ export default function RulebookUploadPage() {
       )}
 
       {progress === 100 && (
-        <div className="mt-6 p-4 bg-green-500/10 border border-green-500/30 rounded-lg">
-          <p className="text-green-400 text-sm">
+        <div className="mt-6 p-4 bg-success/10 border border-success/30 rounded-lg">
+          <p className="text-success text-body-sm">
             업로드 완료! 규칙서가 처리 중입니다. 완료되면 세션에서 사용할 수 있습니다.
           </p>
         </div>

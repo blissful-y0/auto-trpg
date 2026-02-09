@@ -1,6 +1,26 @@
 import type { Metadata } from 'next';
+import { Inter, Crimson_Pro, JetBrains_Mono } from 'next/font/google';
+import { ThemeProvider } from 'next-themes';
 import { Toaster } from 'sonner';
 import './globals.css';
+
+const inter = Inter({
+  subsets: ['latin'],
+  variable: '--font-inter',
+  display: 'swap',
+});
+
+const crimsonPro = Crimson_Pro({
+  subsets: ['latin'],
+  variable: '--font-crimson',
+  display: 'swap',
+});
+
+const jetbrainsMono = JetBrains_Mono({
+  subsets: ['latin'],
+  variable: '--font-jetbrains',
+  display: 'swap',
+});
 
 export const metadata: Metadata = {
   title: 'Auto TRPG - AI 게임 마스터',
@@ -13,21 +33,33 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="ko" className="dark">
-      <body className="min-h-screen bg-slate-900 font-sans">
-        {children}
-        <Toaster
-          theme="dark"
-          position="top-right"
-          richColors
-          toastOptions={{
-            style: {
-              background: '#1e293b',
-              border: '1px solid #334155',
-              color: '#e2e8f0',
-            },
-          }}
-        />
+    <html
+      lang="ko"
+      className={`${inter.variable} ${crimsonPro.variable} ${jetbrainsMono.variable}`}
+      suppressHydrationWarning
+    >
+      <body className="min-h-screen font-sans antialiased">
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="dark"
+          enableSystem={false}
+          disableTransitionOnChange
+        >
+          {children}
+          <Toaster
+            position="bottom-right"
+            toastOptions={{
+              duration: 4000,
+              style: {
+                background: 'var(--bg-elevated)',
+                border: '1px solid var(--border-default)',
+                color: 'var(--text-primary)',
+                borderRadius: 'var(--radius-md)',
+                boxShadow: 'var(--shadow-md)',
+              },
+            }}
+          />
+        </ThemeProvider>
       </body>
     </html>
   );

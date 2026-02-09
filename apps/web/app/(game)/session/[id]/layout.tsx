@@ -3,5 +3,5 @@ export default function GameLayout({
 }: {
   children: React.ReactNode;
 }) {
-  return <div className="h-screen overflow-hidden bg-slate-900">{children}</div>;
+  return <div className="h-screen overflow-hidden bg-bg-base">{children}</div>;
 }

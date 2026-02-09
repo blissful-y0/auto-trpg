@@ -50,15 +50,15 @@ export default function SignupPage() {
 
   return (
     <div>
-      <h2 className="text-xl font-semibold text-slate-100 mb-6">회원가입</h2>
+      <h2 className="text-heading-2 text-text-primary mb-6">회원가입</h2>
 
       <form onSubmit={handleSignup} className="space-y-4">
         <div>
-          <label htmlFor="nickname" className="block text-sm text-slate-300 mb-1.5">
+          <label htmlFor="nickname" className="block text-body-sm text-text-secondary mb-1.5">
             닉네임
           </label>
           <div className="relative">
-            <User size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+            <User size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-tertiary" />
             <input
               id="nickname"
               type="text"
@@ -72,11 +72,11 @@ export default function SignupPage() {
         </div>
 
         <div>
-          <label htmlFor="email" className="block text-sm text-slate-300 mb-1.5">
+          <label htmlFor="email" className="block text-body-sm text-text-secondary mb-1.5">
             이메일
           </label>
           <div className="relative">
-            <Mail size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+            <Mail size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-tertiary" />
             <input
               id="email"
               type="email"
@@ -90,11 +90,11 @@ export default function SignupPage() {
         </div>
 
         <div>
-          <label htmlFor="password" className="block text-sm text-slate-300 mb-1.5">
+          <label htmlFor="password" className="block text-body-sm text-text-secondary mb-1.5">
             비밀번호
           </label>
           <div className="relative">
-            <Lock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+            <Lock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-tertiary" />
             <input
               id="password"
               type="password"
@@ -109,11 +109,11 @@ export default function SignupPage() {
         </div>
 
         <div>
-          <label htmlFor="confirmPassword" className="block text-sm text-slate-300 mb-1.5">
+          <label htmlFor="confirmPassword" className="block text-body-sm text-text-secondary mb-1.5">
             비밀번호 확인
           </label>
           <div className="relative">
-            <Lock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+            <Lock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-tertiary" />
             <input
               id="confirmPassword"
               type="password"
@@ -143,9 +143,9 @@ export default function SignupPage() {
         </button>
       </form>
 
-      <p className="mt-6 text-center text-sm text-slate-400">
+      <p className="mt-6 text-center text-body-sm text-text-secondary">
         이미 계정이 있으신가요?{' '}
-        <Link href="/login" className="text-primary-400 hover:text-primary-300 font-medium">
+        <Link href="/login" className="text-gold hover:text-gold-dim font-medium">
           로그인
         </Link>
       </p>

@@ -19,9 +19,9 @@ interface ProviderModel {
 }
 
 const providerConfig: Record<string, { name: string; placeholder: string; color: string }> = {
-  openai: { name: 'OpenAI', placeholder: 'sk-...', color: 'text-emerald-400' },
-  anthropic: { name: 'Anthropic', placeholder: 'sk-ant-...', color: 'text-orange-400' },
-  google: { name: 'Google AI', placeholder: 'AI...', color: 'text-blue-400' },
+  openai: { name: 'OpenAI', placeholder: 'sk-...', color: 'text-success' },
+  anthropic: { name: 'Anthropic', placeholder: 'sk-ant-...', color: 'text-gold' },
+  google: { name: 'Google AI', placeholder: 'AI...', color: 'text-info' },
 };
 
 // 프론트엔드 → 백엔드 프로바이더 이름 매핑
@@ -159,20 +159,20 @@ export default function SettingsPage() {
   const validityBadge = (isValid: boolean | null) => {
     if (isValid === true) {
       return (
-        <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-green-500/15 text-green-400 border border-green-500/20">
+        <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-success/15 text-success">
           <ShieldCheck size={12} /> 유효
         </span>
       );
     }
     if (isValid === false) {
       return (
-        <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-red-500/15 text-red-400 border border-red-500/20">
+        <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-danger/15 text-danger">
           <AlertCircle size={12} /> 만료됨
         </span>
       );
     }
     return (
-      <span className="text-xs px-2 py-0.5 rounded-full bg-slate-600/30 text-slate-400 border border-slate-600/20">
+      <span className="text-xs px-2 py-0.5 rounded-full bg-bg-overlay text-text-tertiary border border-line">
         미검증
       </span>
     );
@@ -181,23 +181,23 @@ export default function SettingsPage() {
   return (
     <div className="max-w-2xl mx-auto">
       <div className="mb-8">
-        <h2 className="text-2xl font-bold text-slate-100 flex items-center gap-2">
-          <Key size={24} className="text-primary-400" />
+        <h2 className="text-heading-1 text-text-primary flex items-center gap-2">
+          <Key size={24} className="text-gold" />
           설정
         </h2>
-        <p className="text-slate-400 mt-1">API 키 및 계정 설정을 관리하세요</p>
+        <p className="text-text-tertiary mt-1">API 키 및 계정 설정을 관리하세요</p>
       </div>
 
       {/* 제공 모델 목록 */}
       <div className="card p-6 mb-6">
         <div className="mb-4">
-          <h3 className="text-lg font-semibold text-slate-100 mb-1">제공 모델 목록</h3>
-          <p className="text-sm text-slate-400">등록된 API 키로 최신 모델 목록을 조회합니다.</p>
+          <h3 className="text-heading-3 text-text-primary mb-1">제공 모델 목록</h3>
+          <p className="text-sm text-text-tertiary">등록된 API 키로 최신 모델 목록을 조회합니다.</p>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
           <div>
-            <label className="block text-xs text-slate-500 mb-1">프로바이더</label>
+            <label className="block text-xs text-text-tertiary mb-1">프로바이더</label>
             <select
               value={modelProvider}
               onChange={(e) => setModelProvider(e.target.value)}
@@ -229,49 +229,49 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        <div className="text-xs text-slate-500 mb-3">
+        <div className="text-xs text-text-tertiary mb-3">
           {modelSource === 'live' && '실시간 모델 목록'}
           {modelSource === 'static' && '정적 fallback 모델 목록'}
           {modelSource === null && '모델 목록을 조회하세요'}
         </div>
 
         {providerModels.length > 0 ? (
-          <div className="max-h-56 overflow-auto rounded-lg border border-slate-700/50 bg-slate-800/40 p-2 space-y-1">
+          <div className="max-h-56 overflow-auto rounded-lg border border-line bg-bg-inset p-2 space-y-1">
             {providerModels.map((model) => (
               <div
                 key={model.id}
-                className="px-3 py-2 rounded-md bg-slate-700/30 text-sm text-slate-200"
+                className="px-3 py-2 rounded-md bg-bg-overlay text-sm text-text-secondary"
               >
                 <div className="font-medium">{model.label || model.id}</div>
-                <div className="text-xs text-slate-500 mt-0.5">{model.id}</div>
+                <div className="text-xs text-text-tertiary mt-0.5">{model.id}</div>
               </div>
             ))}
           </div>
         ) : (
-          <div className="text-sm text-slate-500">조회된 모델이 없습니다.</div>
+          <div className="text-sm text-text-tertiary">조회된 모델이 없습니다.</div>
         )}
       </div>
 
       {/* API 키 관리 섹션 */}
       <div className="card p-6 mb-6">
         <div className="mb-6">
-          <h3 className="text-lg font-semibold text-slate-100 mb-1">API 키 관리</h3>
-          <p className="text-sm text-slate-400">
+          <h3 className="text-heading-3 text-text-primary mb-1">API 키 관리</h3>
+          <p className="text-sm text-text-tertiary">
             BYOK(Bring Your Own Key) — 각 AI 프로바이더의 API 키를 등록하면 해당 모델을 사용할 수
             있습니다.
           </p>
         </div>
 
         {loading ? (
-          <div className="flex items-center justify-center py-8 text-slate-400">
+          <div className="flex items-center justify-center py-8 text-text-tertiary">
             <Loader2 size={20} className="animate-spin mr-2" />키 목록 불러오는 중...
           </div>
         ) : loadError ? (
           <div className="flex flex-col items-center py-8">
-            <AlertCircle size={32} className="text-red-400 mb-2" />
-            <p className="text-red-400 text-sm mb-1">키 목록을 불러올 수 없습니다</p>
-            <p className="text-slate-500 text-xs mb-3">{loadError}</p>
-            <button onClick={loadKeys} className="text-xs text-primary-400 hover:text-primary-300">
+            <AlertCircle size={32} className="text-danger mb-2" />
+            <p className="text-danger text-sm mb-1">키 목록을 불러올 수 없습니다</p>
+            <p className="text-text-tertiary text-xs mb-3">{loadError}</p>
+            <button onClick={loadKeys} className="text-xs text-gold hover:text-gold-dim">
               다시 시도
             </button>
           </div>
@@ -283,28 +283,28 @@ export default function SettingsPage() {
                 {apiKeys.map((key) => (
                   <div
                     key={key.id}
-                    className="flex items-center gap-3 p-4 bg-slate-700/30 rounded-xl border border-slate-700/50 hover:border-slate-600/50 transition-colors"
+                    className="flex items-center gap-3 p-4 bg-bg-overlay rounded-lg border border-line hover:border-line-strong transition-colors"
                   >
-                    <div className="w-10 h-10 rounded-lg bg-slate-700 flex items-center justify-center shrink-0">
+                    <div className="w-10 h-10 rounded-lg bg-bg-overlay flex items-center justify-center shrink-0">
                       <Key
                         size={18}
-                        className={providerConfig[key.provider]?.color || 'text-slate-400'}
+                        className={providerConfig[key.provider]?.color || 'text-text-tertiary'}
                       />
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-0.5">
-                        <span className="text-sm font-medium text-slate-200">
+                        <span className="text-sm font-medium text-text-secondary">
                           {providerConfig[key.provider]?.name ?? key.provider}
                         </span>
                         {validityBadge(key.isValid)}
                       </div>
-                      <p className="text-xs text-slate-500 font-mono">{key.hint}</p>
+                      <p className="text-xs text-text-tertiary font-mono">{key.hint}</p>
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
                       <button
                         onClick={() => handleValidateKey(key)}
                         disabled={validating === key.id}
-                        className="p-2 rounded-lg text-slate-400 hover:text-primary-400 hover:bg-slate-700/50 transition-colors disabled:opacity-50"
+                        className="p-2 rounded-lg text-text-tertiary hover:text-gold hover:bg-bg-overlay transition-colors disabled:opacity-50"
                         title="키 검증"
                       >
                         {validating === key.id ? (
@@ -316,7 +316,7 @@ export default function SettingsPage() {
                       <button
                         onClick={() => handleDeleteKey(key)}
                         disabled={deleting === key.id}
-                        className="p-2 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-50"
+                        className="p-2 rounded-lg text-text-tertiary hover:text-danger hover:bg-danger/10 transition-colors disabled:opacity-50"
                         title="키 삭제"
                       >
                         {deleting === key.id ? (
@@ -330,24 +330,24 @@ export default function SettingsPage() {
                 ))}
               </div>
             ) : (
-              <div className="text-center py-6 mb-6 bg-slate-700/20 rounded-xl border border-dashed border-slate-700">
-                <Key size={28} className="text-slate-600 mx-auto mb-2" />
-                <p className="text-sm text-slate-500">등록된 API 키가 없습니다</p>
-                <p className="text-xs text-slate-600 mt-1">아래에서 키를 등록하세요</p>
+              <div className="text-center py-6 mb-6 bg-bg-inset rounded-lg border border-dashed border-line">
+                <Key size={28} className="text-text-tertiary mx-auto mb-2" />
+                <p className="text-sm text-text-tertiary">등록된 API 키가 없습니다</p>
+                <p className="text-xs text-text-tertiary mt-1">아래에서 키를 등록하세요</p>
               </div>
             )}
           </>
         )}
 
         {/* 새 키 등록 */}
-        <div className="pt-4 border-t border-slate-700/50">
-          <h4 className="text-sm font-medium text-slate-300 mb-3 flex items-center gap-2">
+        <div className="pt-4 border-t border-line">
+          <h4 className="text-sm font-medium text-text-secondary mb-3 flex items-center gap-2">
             <Plus size={16} />새 API 키 등록
           </h4>
           <form onSubmit={handleAddKey} className="space-y-3">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
-                <label className="block text-xs text-slate-500 mb-1">프로바이더</label>
+                <label className="block text-xs text-text-tertiary mb-1">프로바이더</label>
                 <select
                   value={newKeyProvider}
                   onChange={(e) => setNewKeyProvider(e.target.value)}
@@ -361,7 +361,7 @@ export default function SettingsPage() {
                 </select>
               </div>
               <div className="sm:col-span-2">
-                <label className="block text-xs text-slate-500 mb-1">API 키</label>
+                <label className="block text-xs text-text-tertiary mb-1">API 키</label>
                 <input
                   type="password"
                   value={newKeyValue}
@@ -392,18 +392,18 @@ export default function SettingsPage() {
       </div>
 
       {/* 도움말 */}
-      <div className="card p-4 bg-slate-800/50 border-slate-700/50">
-        <h4 className="text-sm font-medium text-slate-300 mb-2">API 키 발급 안내</h4>
-        <ul className="text-xs text-slate-500 space-y-1.5">
+      <div className="card p-4">
+        <h4 className="text-sm font-medium text-text-secondary mb-2">API 키 발급 안내</h4>
+        <ul className="text-xs text-text-tertiary space-y-1.5">
           <li className="flex items-start gap-2">
-            <span className="text-orange-400 mt-0.5">{'>'}</span>
+            <span className="text-gold mt-0.5">{'>'}</span>
             <span>
               Anthropic:{' '}
               <a
                 href="https://console.anthropic.com/settings/keys"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-primary-400 hover:underline"
+                className="text-gold hover:underline"
               >
                 console.anthropic.com
               </a>
@@ -411,14 +411,14 @@ export default function SettingsPage() {
             </span>
           </li>
           <li className="flex items-start gap-2">
-            <span className="text-emerald-400 mt-0.5">{'>'}</span>
+            <span className="text-success mt-0.5">{'>'}</span>
             <span>
               OpenAI:{' '}
               <a
                 href="https://platform.openai.com/api-keys"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-primary-400 hover:underline"
+                className="text-gold hover:underline"
               >
                 platform.openai.com
               </a>
@@ -426,14 +426,14 @@ export default function SettingsPage() {
             </span>
           </li>
           <li className="flex items-start gap-2">
-            <span className="text-blue-400 mt-0.5">{'>'}</span>
+            <span className="text-info mt-0.5">{'>'}</span>
             <span>
               Google AI:{' '}
               <a
                 href="https://aistudio.google.com/apikey"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-primary-400 hover:underline"
+                className="text-gold hover:underline"
               >
                 aistudio.google.com
               </a>

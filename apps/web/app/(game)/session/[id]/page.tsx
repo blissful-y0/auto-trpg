@@ -216,7 +216,7 @@ export default function GameSessionPage() {
       {/* 오른쪽 패널 토글 버튼 */}
       <button
         onClick={() => setShowRightPanel(!showRightPanel)}
-        className="hidden md:flex items-center justify-center w-6 border-l border-slate-700/50 bg-slate-800/50 text-slate-500 hover:text-slate-300 hover:bg-slate-700/50 transition-colors"
+        className="hidden md:flex items-center justify-center w-6 border-l border-line bg-bg-surface text-text-tertiary hover:text-text-secondary hover:bg-bg-elevated transition-colors"
         title={showRightPanel ? '패널 닫기' : '패널 열기'}
       >
         {showRightPanel ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />}
@@ -225,23 +225,23 @@ export default function GameSessionPage() {
       {/* 모바일 FAB */}
       <button
         onClick={() => setShowRightPanel(!showRightPanel)}
-        className="md:hidden fixed bottom-4 right-4 z-50 w-12 h-12 bg-primary-600 rounded-full flex items-center justify-center shadow-lg shadow-primary-500/20"
+        className="md:hidden fixed bottom-4 right-4 z-50 w-12 h-12 bg-gold rounded-full flex items-center justify-center shadow-lg shadow-glow"
       >
         {showRightPanel ? (
-          <PanelRightClose size={18} className="text-white" />
+          <PanelRightClose size={18} className="text-text-inverse" />
         ) : (
-          <PanelRightOpen size={18} className="text-white" />
+          <PanelRightOpen size={18} className="text-text-inverse" />
         )}
       </button>
 
       {/* 오른쪽: 게임 정보 패널 */}
       {showRightPanel && (
         <div
-          className="w-80 lg:w-96 border-l border-slate-700/50 bg-slate-800/50 flex flex-col
+          className="w-80 lg:w-96 border-l border-line bg-bg-surface flex flex-col
             fixed md:static inset-y-0 right-0 z-40 md:z-auto"
         >
           {/* 패널 탭 */}
-          <div className="flex border-b border-slate-700/50">
+          <div className="flex border-b border-line">
             {panelTabs.map((tab) => {
               const Icon = tab.icon;
               return (
@@ -250,8 +250,8 @@ export default function GameSessionPage() {
                   onClick={() => setRightPanel(tab.key)}
                   className={`flex-1 flex flex-col items-center gap-1 px-2 py-2.5 text-xs font-medium transition-all ${
                     rightPanel === tab.key
-                      ? 'text-primary-400 border-b-2 border-primary-400 bg-primary-500/5'
-                      : 'text-slate-500 hover:text-slate-300'
+                      ? 'text-gold border-b-2 border-gold bg-gold/5'
+                      : 'text-text-tertiary hover:text-text-secondary'
                   }`}
                 >
                   <Icon size={16} />
@@ -261,8 +261,8 @@ export default function GameSessionPage() {
             })}
           </div>
 
-          <div className="border-b border-slate-700/50 px-3 py-3 space-y-2">
-            <div className="text-[11px] text-slate-500">
+          <div className="border-b border-line px-3 py-3 space-y-2">
+            <div className="text-[11px] text-text-tertiary">
               현재 프로바이더: {providerLabel[primaryProvider]}
             </div>
             <select
@@ -281,7 +281,7 @@ export default function GameSessionPage() {
                 </option>
               ))}
             </select>
-            <div className="text-[11px] text-slate-500">
+            <div className="text-[11px] text-text-tertiary">
               {!canEditModel
                 ? '세션 생성자만 모델을 변경할 수 있습니다'
                 : savingModel
