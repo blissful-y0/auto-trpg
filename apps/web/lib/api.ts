@@ -2,13 +2,24 @@
 
 import { createClient } from '@/lib/supabase/client';
 
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_GAME_SERVER_URL ?? 'http://localhost:3001';
+const API_BASE_URL = process.env.NEXT_PUBLIC_GAME_SERVER_URL ?? 'http://localhost:3001';
 
 interface ApiOptions {
   method?: string;
   body?: unknown;
   headers?: Record<string, string>;
+}
+
+export class ApiError extends Error {
+  status: number;
+  code?: string;
+
+  constructor(message: string, status: number, code?: string) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.code = code;
+  }
 }
 
 // Supabase 세션에서 액세스 토큰 가져오기
@@ -53,7 +64,7 @@ async function fetchApi<T>(endpoint: string, options: ApiOptions = {}): Promise<
   if (!res.ok) {
     const error = await res.json().catch(() => null);
     const message = error?.message ?? `서버 오류 (HTTP ${res.status})`;
-    throw new Error(message);
+    throw new ApiError(message, res.status, error?.code);
   }
 
   return res.json();
@@ -65,14 +76,12 @@ export const sessionApi = {
   get: (id: string) => fetchApi<{ data: unknown }>(`/api/sessions/${id}`),
   create: (data: unknown) =>
     fetchApi<{ data: unknown }>('/api/sessions', { method: 'POST', body: data }),
-  join: (id: string) =>
-    fetchApi<{ data: unknown }>(`/api/sessions/${id}/join`, { method: 'POST' }),
+  join: (id: string) => fetchApi<{ data: unknown }>(`/api/sessions/${id}/join`, { method: 'POST' }),
 };
 
 // 캐릭터 API
 export const characterApi = {
-  get: (sessionId: string) =>
-    fetchApi<{ data: unknown }>(`/api/sessions/${sessionId}/character`),
+  get: (sessionId: string) => fetchApi<{ data: unknown }>(`/api/sessions/${sessionId}/character`),
   create: (sessionId: string, data: unknown) =>
     fetchApi<{ data: unknown }>(`/api/sessions/${sessionId}/character`, {
       method: 'POST',
@@ -130,7 +139,10 @@ export const settingsApi = {
   deleteApiKey: (provider: string) =>
     fetchApi<{ message: string }>(`/api/keys/${provider}`, { method: 'DELETE' }),
   validateApiKey: (provider: string) =>
-    fetchApi<{ data: { provider: string; isValid: boolean; message: string } }>(`/api/keys/${provider}/validate`, {
-      method: 'POST',
-    }),
+    fetchApi<{ data: { provider: string; isValid: boolean; message: string } }>(
+      `/api/keys/${provider}/validate`,
+      {
+        method: 'POST',
+      },
+    ),
 };
