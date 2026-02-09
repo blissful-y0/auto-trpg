@@ -138,7 +138,7 @@ export default function ChatPanel({ sessionId, sessionName, gameSystem }: Props)
               <div className="flex items-center gap-2 mb-1">
                 <span
                   className={`text-xs font-semibold ${
-                    msg.type === 'gm' ? 'text-gold' : 'text-gold'
+                    msg.type === 'gm' ? 'text-gold' : 'text-text-primary'
                   }`}
                 >
                   {msg.sender}

@@ -48,7 +48,7 @@ export default function DashboardLayout({
   return (
     <div className="flex min-h-screen bg-bg-base">
       {/* 사이드바 (데스크톱) — 220px */}
-      <aside className="w-[220px] bg-bg-surface border-r border-line-default hidden md:flex md:flex-col">
+      <aside className="w-[220px] bg-bg-surface border-r border-line hidden md:flex md:flex-col">
         <div className="p-5">
           <Link href="/dashboard" className="flex items-center gap-2">
             <Dice5 size={24} className="text-gold" />
@@ -102,7 +102,7 @@ export default function DashboardLayout({
 
       {/* 모바일 헤더 */}
       <div className="flex-1 flex flex-col min-w-0">
-        <header className="md:hidden flex items-center justify-between px-4 py-3 bg-bg-surface border-b border-line-default">
+        <header className="md:hidden flex items-center justify-between px-4 py-3 bg-bg-surface border-b border-line">
           <Link href="/dashboard" className="flex items-center gap-2">
             <Dice5 size={20} className="text-gold" />
             <span className="font-serif text-base font-bold text-gold">Auto TRPG</span>
@@ -125,7 +125,7 @@ export default function DashboardLayout({
 
         {/* 모바일 메뉴 드롭다운 */}
         {mobileMenuOpen && (
-          <div className="md:hidden bg-bg-surface border-b border-line-default px-4 py-2 space-y-1 animate-fade-in">
+          <div className="md:hidden bg-bg-surface border-b border-line px-4 py-2 space-y-1 animate-fade-in">
             {navItems.map((item) => {
               const Icon = item.icon;
               const isActive =

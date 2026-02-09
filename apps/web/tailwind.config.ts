@@ -25,7 +25,7 @@ const config: Config = {
           inverse: 'var(--text-inverse)',
         },
         line: {
-          default: 'var(--border-default)',
+          DEFAULT: 'var(--border-default)',
           subtle: 'var(--border-subtle)',
           strong: 'var(--border-strong)',
         },
