@@ -1,6 +1,9 @@
 'use client';
 
 import { useState } from 'react';
+import { useParams } from 'next/navigation';
+import { useSocket } from '@/lib/hooks/useSocket';
+import { useGameSocket } from '@/lib/hooks/useGameSocket';
 import ChatPanel from './components/ChatPanel';
 import CharacterSheet from './components/CharacterSheet';
 import DiceRoller from './components/DiceRoller';
@@ -10,6 +13,18 @@ import NarrativeLog from './components/NarrativeLog';
 type RightPanel = 'character' | 'dice' | 'combat' | 'narrative';
 
 export default function GameSessionPage() {
+  const params = useParams();
+  const sessionId = params.id as string;
+
+  // TODO: 실제 인증 토큰은 Supabase 세션에서 가져와야 함
+  const token = typeof window !== 'undefined'
+    ? localStorage.getItem('supabase-auth-token')
+    : null;
+
+  // 소켓 연결 및 게임 이벤트 바인딩
+  useSocket(sessionId, token);
+  useGameSocket(sessionId);
+
   const [rightPanel, setRightPanel] = useState<RightPanel>('character');
   const [showRightPanel, setShowRightPanel] = useState(true);
 
@@ -24,7 +39,7 @@ export default function GameSessionPage() {
     <div className="flex h-full">
       {/* 왼쪽: 채팅 패널 */}
       <div className="flex-1 flex flex-col min-w-0">
-        <ChatPanel />
+        <ChatPanel sessionId={sessionId} />
       </div>
 
       {/* 오른쪽 패널 토글 (모바일) */}

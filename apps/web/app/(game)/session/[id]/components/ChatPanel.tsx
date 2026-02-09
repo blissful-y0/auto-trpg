@@ -1,101 +1,64 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import { useChatStore } from '@/lib/stores/chatStore';
+import { useSocketStore } from '@/lib/stores/socketStore';
+import { getSocket } from '@/lib/socket';
 
 // 메시지 타입
 type MessageType = 'player' | 'gm' | 'system' | 'ooc' | 'dice';
 
-interface ChatMessage {
-  id: string;
-  type: MessageType;
-  sender: string;
-  content: string;
-  timestamp: string;
-  diceResult?: {
-    notation: string;
-    rolls: number[];
-    total: number;
-    modifier: number;
-  };
+interface Props {
+  sessionId: string;
 }
 
-// Mock 메시지 데이터
-const mockMessages: ChatMessage[] = [
-  {
-    id: '1',
-    type: 'system',
-    sender: '시스템',
-    content: '세션이 시작되었습니다. 잃어버린 광산의 판델버에 오신 것을 환영합니다.',
-    timestamp: '14:00',
-  },
-  {
-    id: '2',
-    type: 'gm',
-    sender: 'GM',
-    content:
-      '여러분은 팬달린 마을로 향하는 먼지 낀 도로를 따라 걷고 있습니다. 건드워르의 광산 물자를 실은 수레가 덜컹거리며 뒤따릅니다. 오후의 햇살이 나무 사이로 비추고 있지만, 길 앞쪽에서 이상한 정적이 흐르고 있습니다...',
-    timestamp: '14:01',
-  },
-  {
-    id: '3',
-    type: 'player',
-    sender: '아라곤',
-    content: '주변을 살펴봅니다. 수상한 점이 있나요? 감지 체크를 하겠습니다.',
-    timestamp: '14:02',
-  },
-  {
-    id: '4',
-    type: 'dice',
-    sender: '아라곤',
-    content: '감지(Perception) 체크',
-    timestamp: '14:02',
-    diceResult: {
-      notation: '1d20+3',
-      rolls: [14],
-      total: 17,
-      modifier: 3,
-    },
-  },
-  {
-    id: '5',
-    type: 'gm',
-    sender: 'GM',
-    content:
-      '아라곤, 당신의 예리한 눈이 길 양쪽의 수풀 속에서 무언가를 포착합니다. 죽은 말 두 마리가 길 위에 쓰러져 있고, 그 주변에 검은 깃털 달린 화살이 여러 개 박혀 있습니다. 고블린의 매복입니다!',
-    timestamp: '14:03',
-  },
-  {
-    id: '6',
-    type: 'ooc',
-    sender: '아라곤',
-    content: '전투 시작인가요? 이니셔티브 굴려야 하나요?',
-    timestamp: '14:03',
-  },
-  {
-    id: '7',
-    type: 'system',
-    sender: '시스템',
-    content: '전투가 시작됩니다! 모든 플레이어는 이니셔티브를 굴려주세요.',
-    timestamp: '14:04',
-  },
-];
-
-export default function ChatPanel() {
-  const [messages] = useState<ChatMessage[]>(mockMessages);
+export default function ChatPanel({ sessionId }: Props) {
+  const { messages, isStreaming, streamingContent } = useChatStore();
+  const { status } = useSocketStore();
   const [input, setInput] = useState('');
   const [isOOC, setIsOOC] = useState(false);
-  const [isStreaming] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [messages, streamingContent]);
 
   const handleSend = (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim()) return;
-    // TODO: 메시지 전송 로직
-    console.log('메시지 전송:', { content: input, isOOC });
+
+    const socket = getSocket();
+    if (!socket || status !== 'connected') return;
+
+    if (isOOC) {
+      // OOC 채팅 메시지
+      socket.emit('chat:message', {
+        sessionId,
+        content: input,
+        isOOC: true,
+      });
+    } else {
+      // IC 플레이어 액션
+      socket.emit('player:action', {
+        sessionId,
+        characterId: '', // TODO: 캐릭터 선택 연동
+        action: 'message',
+        message: input,
+      });
+    }
+
+    // 자신의 메시지를 로컬에 즉시 추가
+    useChatStore.getState().addMessage({
+      id: `local-${Date.now()}`,
+      type: isOOC ? 'ooc' : 'player',
+      sender: '나',
+      content: input,
+      timestamp: new Date().toLocaleTimeString('ko-KR', {
+        hour: '2-digit',
+        minute: '2-digit',
+      }),
+    });
+
     setInput('');
   };
 
@@ -114,14 +77,29 @@ export default function ChatPanel() {
     }
   };
 
+  // 연결 상태 라벨
+  const statusLabel: Record<string, { text: string; color: string }> = {
+    connected: { text: '연결됨', color: 'text-green-400' },
+    connecting: { text: '연결 중...', color: 'text-yellow-400' },
+    reconnecting: { text: '재연결 중...', color: 'text-yellow-400' },
+    disconnected: { text: '연결 끊김', color: 'text-red-400' },
+  };
+
+  const currentStatus = statusLabel[status] ?? statusLabel.disconnected;
+
   return (
     <div className="flex flex-col h-full">
       {/* 세션 헤더 */}
       <div className="px-4 py-3 border-b border-slate-700 bg-slate-800">
-        <h2 className="font-semibold text-slate-100">
-          잃어버린 광산의 판델버
-        </h2>
-        <p className="text-xs text-slate-400">D&D 5e · 플레이어 3/4</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="font-semibold text-slate-100">게임 세션</h2>
+            <p className="text-xs text-slate-400">D&D 5e</p>
+          </div>
+          <span className={`text-xs ${currentStatus.color}`}>
+            {currentStatus.text}
+          </span>
+        </div>
       </div>
 
       {/* 메시지 목록 */}
@@ -149,7 +127,7 @@ export default function ChatPanel() {
             {/* 주사위 결과 인라인 표시 */}
             {msg.diceResult && (
               <div className="mt-2 flex items-center gap-2 text-sm">
-                <span className="text-slate-400">🎲 {msg.diceResult.notation}</span>
+                <span className="text-slate-400">{msg.diceResult.notation}</span>
                 <span className="text-slate-500">
                   [{msg.diceResult.rolls.join(', ')}]
                 </span>
@@ -173,11 +151,15 @@ export default function ChatPanel() {
             <div className="flex items-center gap-2 mb-1">
               <span className="text-sm font-medium text-amber-400">GM</span>
             </div>
-            <div className="flex items-center gap-1">
-              <span className="w-2 h-2 bg-amber-400 rounded-full animate-pulse" />
-              <span className="w-2 h-2 bg-amber-400 rounded-full animate-pulse delay-100" />
-              <span className="w-2 h-2 bg-amber-400 rounded-full animate-pulse delay-200" />
-            </div>
+            {streamingContent ? (
+              <p className="text-sm leading-relaxed">{streamingContent}</p>
+            ) : (
+              <div className="flex items-center gap-1">
+                <span className="w-2 h-2 bg-amber-400 rounded-full animate-pulse" />
+                <span className="w-2 h-2 bg-amber-400 rounded-full animate-pulse delay-100" />
+                <span className="w-2 h-2 bg-amber-400 rounded-full animate-pulse delay-200" />
+              </div>
+            )}
           </div>
         )}
 
@@ -203,10 +185,21 @@ export default function ChatPanel() {
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder={isOOC ? 'OOC 메시지...' : '행동을 입력하세요...'}
+            placeholder={
+              status !== 'connected'
+                ? '서버에 연결 중...'
+                : isOOC
+                  ? 'OOC 메시지...'
+                  : '행동을 입력하세요...'
+            }
+            disabled={status !== 'connected'}
             className="input-field flex-1"
           />
-          <button type="submit" className="btn-primary shrink-0">
+          <button
+            type="submit"
+            disabled={status !== 'connected'}
+            className="btn-primary shrink-0 disabled:opacity-50"
+          >
             전송
           </button>
         </form>
