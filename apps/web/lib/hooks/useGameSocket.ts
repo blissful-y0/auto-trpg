@@ -6,11 +6,13 @@ import { useChatStore } from '../stores/chatStore';
 import { useGameStore } from '../stores/gameStore';
 
 // 게임 이벤트 소켓 바인딩 훅
-export function useGameSocket(sessionId: string) {
+export function useGameSocket(sessionId: string, enabled = true) {
   const { addMessage, startStreaming, appendStreamContent, endStreaming } = useChatStore();
   const { startCombat, endCombat } = useGameStore();
 
   useEffect(() => {
+    if (!enabled) return;
+
     const socket = getSocket();
     if (!socket) return;
 
@@ -35,11 +37,7 @@ export function useGameSocket(sessionId: string) {
     };
 
     // GM 스트리밍 수신
-    const handleGmStream = (payload: {
-      sessionId: string;
-      chunk: string;
-      done: boolean;
-    }) => {
+    const handleGmStream = (payload: { sessionId: string; chunk: string; done: boolean }) => {
       if (payload.sessionId !== sessionId) return;
 
       if (payload.done) {
@@ -62,10 +60,7 @@ export function useGameSocket(sessionId: string) {
     };
 
     // 플레이어 참가 알림
-    const handlePlayerJoined = (payload: {
-      sessionId: string;
-      name: string;
-    }) => {
+    const handlePlayerJoined = (payload: { sessionId: string; name: string }) => {
       if (payload.sessionId !== sessionId) return;
 
       addMessage({
@@ -81,10 +76,7 @@ export function useGameSocket(sessionId: string) {
     };
 
     // 플레이어 퇴장 알림
-    const handlePlayerLeft = (payload: {
-      sessionId: string;
-      name: string;
-    }) => {
+    const handlePlayerLeft = (payload: { sessionId: string; name: string }) => {
       if (payload.sessionId !== sessionId) return;
 
       addMessage({
@@ -130,10 +122,7 @@ export function useGameSocket(sessionId: string) {
     };
 
     // 전투 업데이트 수신
-    const handleCombatUpdate = (payload: {
-      sessionId: string;
-      combatState: unknown;
-    }) => {
+    const handleCombatUpdate = (payload: { sessionId: string; combatState: unknown }) => {
       if (payload.sessionId !== sessionId) return;
 
       const state = payload.combatState as {
@@ -189,5 +178,14 @@ export function useGameSocket(sessionId: string) {
       socket.off('combat:update', handleCombatUpdate);
       socket.off('error', handleError);
     };
-  }, [sessionId, addMessage, startStreaming, appendStreamContent, endStreaming, startCombat, endCombat]);
+  }, [
+    enabled,
+    sessionId,
+    addMessage,
+    startStreaming,
+    appendStreamContent,
+    endStreaming,
+    startCombat,
+    endCombat,
+  ]);
 }
