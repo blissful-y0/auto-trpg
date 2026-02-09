@@ -81,19 +81,27 @@ function toSessionInfo(session: Record<string, unknown>): GameSessionInfo {
 }
 
 // DB 캐릭터 데이터 → CharacterInfo[] 변환
+// DB 컬럼: hit_points (JSONB), stats (JSONB), abilities (JSONB 배열)
 function toCharacterInfos(characters: Record<string, unknown>[]): CharacterInfo[] {
-  return characters.map((c) => ({
-    characterId: c.id as string,
-    name: (c.name as string) || '이름 없음',
-    race: (c.race as string) || '',
-    class: (c.class as string) || '',
-    level: (c.level as number) || 1,
-    hp: (c.hp as { current: number; max: number }) || { current: 10, max: 10 },
-    abilities: (c.abilities as Record<string, number>) || {},
-    skills: (c.skills as string[]) || [],
-    inventory: (c.inventory as string[]) || [],
-    conditions: (c.conditions as string[]) || [],
-  }));
+  return characters.map((c) => {
+    const hitPoints = (c.hit_points as { current: number; max: number } | null) || {
+      current: 10,
+      max: 10,
+    };
+
+    return {
+      characterId: c.id as string,
+      name: (c.name as string) || '이름 없음',
+      race: (c.race as string) || '',
+      class: (c.class as string) || '',
+      level: (c.level as number) || 1,
+      hp: { current: hitPoints.current, max: hitPoints.max },
+      abilities: (c.stats as Record<string, number>) || {},
+      skills: (c.abilities as string[]) || [],
+      inventory: (c.inventory as string[]) || [],
+      conditions: [],
+    };
+  });
 }
 
 // GameEngine을 통해 플레이어 액션 처리

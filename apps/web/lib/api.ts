@@ -83,9 +83,9 @@ export const sessionApi = {
 
 // 캐릭터 API
 export const characterApi = {
-  get: (sessionId: string) => fetchApi<{ data: unknown }>(`/api/sessions/${sessionId}/character`),
+  get: (sessionId: string) => fetchApi<{ data: unknown }>(`/api/sessions/${sessionId}/characters`),
   create: (sessionId: string, data: unknown) =>
-    fetchApi<{ data: unknown }>(`/api/sessions/${sessionId}/character`, {
+    fetchApi<{ data: unknown }>(`/api/sessions/${sessionId}/characters`, {
       method: 'POST',
       body: data,
     }),

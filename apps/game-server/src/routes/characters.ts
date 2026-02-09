@@ -122,7 +122,13 @@ const updateCharacterSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   stats: z.record(z.number()).optional(),
   backstory: z.string().max(5000).optional(),
-  hp: z.number().int().optional(),
+  hitPoints: z
+    .object({
+      current: z.number().int(),
+      max: z.number().int(),
+      temp: z.number().int().optional(),
+    })
+    .optional(),
   status: z.string().max(50).optional(),
 });
 
@@ -152,9 +158,16 @@ router.patch('/characters/:id', async (req: Request, res: Response, next: NextFu
       throw new AppError(400, `요청 데이터가 올바르지 않습니다: ${parsed.error.message}`);
     }
 
+    // Zod 필드명 → DB 컬럼명 매핑
+    const { hitPoints, ...rest } = parsed.data;
+    const updatePayload: Record<string, unknown> = { ...rest };
+    if (hitPoints) {
+      updatePayload.hit_points = hitPoints;
+    }
+
     const { data: updated, error } = await supabaseAdmin
       .from('characters')
-      .update(parsed.data)
+      .update(updatePayload)
       .eq('id', id)
       .select()
       .single();

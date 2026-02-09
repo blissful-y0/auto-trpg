@@ -10,10 +10,10 @@ const router = Router();
 const createSessionSchema = z.object({
   name: z.string().min(1).max(100),
   gameSystem: z.string().min(1).max(50),
-  maxPlayers: z.number().int().min(1).max(8).default(4),
+  maxPlayers: z.number().int().min(1).max(6).default(4),
   primaryProvider: z.enum(['claude', 'openai', 'gemini']),
   primaryModel: z.string().min(1).max(200).optional(),
-  gmAggressiveness: z.enum(['passive', 'moderate', 'aggressive']).default('moderate'),
+  gmAggressiveness: z.enum(['passive', 'balanced', 'active']).default('balanced'),
   rulebookIds: z.array(z.string().uuid()).optional(),
 });
 
@@ -97,11 +97,16 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
     const sessionIds = participations?.map((p: { session_id: string }) => p.session_id) || [];
 
     // 생성했거나 참가 중인 세션 조회
-    const { data: sessions, error } = await supabaseAdmin
-      .from('game_sessions')
-      .select('*')
-      .or(`created_by.eq.${userId},id.in.(${sessionIds.join(',')})`)
-      .order('created_at', { ascending: false });
+    // sessionIds가 비어있으면 IN() 절이 유효하지 않으므로 created_by만 필터링
+    let query = supabaseAdmin.from('game_sessions').select('*');
+
+    if (sessionIds.length > 0) {
+      query = query.or(`created_by.eq.${userId},id.in.(${sessionIds.join(',')})`);
+    } else {
+      query = query.eq('created_by', userId);
+    }
+
+    const { data: sessions, error } = await query.order('created_at', { ascending: false });
 
     if (error) {
       throw new AppError(500, `세션 목록 조회 실패: ${error.message}`);
