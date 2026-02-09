@@ -8,6 +8,8 @@ import {
   GameSessionInfo,
   CharacterInfo,
 } from '../context/ContextManager';
+import type { MemoryHierarchy } from '../memory/MemoryHierarchy';
+import type { BudgetProfile } from '../memory/types';
 
 export type ActionType = 'combat' | 'exploration' | 'roleplay' | 'skill_check' | 'dice_roll' | 'other';
 
@@ -21,11 +23,25 @@ const ACTION_KEYWORDS: Record<ActionType, string[]> = {
   other: [],
 };
 
+// ActionType → BudgetProfile 매핑
+function getBudgetProfile(actionType: ActionType): BudgetProfile {
+  const mapping: Record<ActionType, BudgetProfile> = {
+    combat: 'combat',
+    exploration: 'exploration',
+    roleplay: 'roleplay',
+    skill_check: 'skill_check',
+    dice_roll: 'skill_check',
+    other: 'exploration',
+  };
+  return mapping[actionType];
+}
+
 export class GameEngine {
   constructor(
     private contextManager: ContextManager,
     private llmRouter: { call: (messages: unknown[], tools: unknown[]) => Promise<GMResponse> } | null,
     private diceEngine: DiceEngine,
+    private memoryHierarchy?: MemoryHierarchy | null,
   ) {}
 
   // 플레이어 액션 처리 (핵심 게임 루프)
@@ -50,8 +66,9 @@ export class GameEngine {
       }
     }
 
-    // 3. ContextManager로 LLM 프롬프트 조립
-    const messages = await this.contextManager.buildPrompt(session, action, characters);
+    // 3. ContextManager로 LLM 프롬프트 조립 (budgetProfile 전달)
+    const budgetProfile = getBudgetProfile(actionType);
+    const messages = await this.contextManager.buildPrompt(session, action, characters, budgetProfile);
 
     // 4. 메시지 저장
     await this.contextManager.saveMessage(action.sessionId, {
@@ -107,6 +124,25 @@ export class GameEngine {
       data: { action: action.message, response: gmResponse.narrative },
       description: `플레이어 액션 처리: ${actionType}`,
     });
+
+    // 10. 메모리 계층 후처리 (장면 전환 감지 및 요약)
+    if (this.memoryHierarchy) {
+      const storedMessages = await this.contextManager.getRecentMessages(action.sessionId);
+      await this.memoryHierarchy.onPostResponse(action.sessionId, {
+        sceneTransition: gmResponse.sceneTransition ?? undefined,
+        stateChanges: gmResponse.stateChanges?.map((c) => ({
+          type: c.type,
+          targetCharacterId: c.targetCharacterId,
+          value: c.value,
+          description: c.description,
+        })),
+        messageCount: storedMessages.length,
+        recentMessages: storedMessages.map((m) => ({
+          role: m.role,
+          content: m.content,
+        })),
+      });
+    }
 
     return gmResponse;
   }
