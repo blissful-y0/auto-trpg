@@ -2,20 +2,14 @@
 
 import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
+import { toast } from 'sonner';
 import { createClient } from '@/lib/supabase/client';
 import { useSocket } from '@/lib/hooks/useSocket';
 import { useGameSocket } from '@/lib/hooks/useGameSocket';
 import { useGameStore } from '@/lib/stores/gameStore';
 import { useChatStore } from '@/lib/stores/chatStore';
-import { sessionApi, chatApi } from '@/lib/api';
-import {
-  User,
-  Dice5,
-  Swords,
-  BookOpen,
-  PanelRightClose,
-  PanelRightOpen,
-} from 'lucide-react';
+import { sessionApi, chatApi, ApiError } from '@/lib/api';
+import { User, Dice5, Swords, BookOpen, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import ChatPanel from './components/ChatPanel';
 import CharacterSheet from './components/CharacterSheet';
 import DiceRoller from './components/DiceRoller';
@@ -37,8 +31,9 @@ export default function GameSessionPage() {
 
   // Supabase 세션에서 토큰 가져오기
   const [token, setToken] = useState<string | null>(null);
+  const [readyForRealtime, setReadyForRealtime] = useState(false);
   const { session, setSession } = useGameStore();
-  const { addMessage } = useChatStore();
+  const { addMessage, clearMessages } = useChatStore();
 
   useEffect(() => {
     const supabase = createClient();
@@ -48,26 +43,51 @@ export default function GameSessionPage() {
   }, []);
 
   // 소켓 연결 및 게임 이벤트 바인딩
-  useSocket(sessionId, token);
-  useGameSocket(sessionId);
+  useSocket(sessionId, readyForRealtime ? token : null);
+  useGameSocket(sessionId, readyForRealtime);
 
   // 초기 데이터 로드
   useEffect(() => {
     if (!token) return;
+    let cancelled = false;
 
-    // 세션 정보 로드
-    sessionApi.get(sessionId).then((res: any) => {
-      if (res?.data) {
-        setSession(res.data);
+    const loadSessionData = async () => {
+      clearMessages();
+
+      try {
+        // 먼저 세션 조회 시도
+        const sessionRes: any = await sessionApi.get(sessionId);
+        if (cancelled) return;
+
+        if (sessionRes?.data) {
+          setSession(sessionRes.data);
+        }
+      } catch (err) {
+        // 참가자가 아닌 경우(403)만 자동 참가 시도
+        if (!(err instanceof ApiError && err.status === 403)) {
+          throw err;
+        }
+
+        await sessionApi.join(sessionId);
+        if (cancelled) return;
+
+        const sessionRes: any = await sessionApi.get(sessionId);
+        if (cancelled) return;
+
+        if (sessionRes?.data) {
+          setSession(sessionRes.data);
+        }
       }
-    }).catch(console.error);
 
-    // 메시지 히스토리 로드
-    chatApi.getMessages(sessionId).then((res: any) => {
-      const messages = res?.data || [];
-      messages.forEach((msg: any) => {
+      const messagesRes: any = await chatApi.getMessages(sessionId);
+      if (cancelled) return;
+
+      const messages = messagesRes?.data || [];
+      messages.forEach((msg: any, idx: number) => {
         addMessage({
-          id: msg.id || `hist-${Date.now()}-${Math.random()}`,
+          id:
+            msg.id ||
+            `hist-${msg.created_at || 'unknown'}-${msg.sender_id || msg.sender_type || 'unknown'}-${idx}`,
           type: msg.sender_type === 'gm' ? 'gm' : msg.is_ooc ? 'ooc' : 'player',
           sender: msg.sender_type === 'gm' ? 'GM' : msg.sender_id || '플레이어',
           content: msg.content,
@@ -77,8 +97,23 @@ export default function GameSessionPage() {
           }),
         });
       });
-    }).catch(console.error);
-  }, [token, sessionId, setSession, addMessage]);
+
+      setReadyForRealtime(true);
+    };
+
+    loadSessionData().catch((err) => {
+      console.error(err);
+      if (!cancelled) {
+        const message = err instanceof Error ? err.message : '세션에 연결하지 못했습니다.';
+        toast.error(message);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      setReadyForRealtime(false);
+    };
+  }, [token, sessionId, setSession, addMessage, clearMessages]);
 
   const [rightPanel, setRightPanel] = useState<RightPanel>('character');
   const [showRightPanel, setShowRightPanel] = useState(true);
@@ -107,7 +142,11 @@ export default function GameSessionPage() {
         onClick={() => setShowRightPanel(!showRightPanel)}
         className="md:hidden fixed bottom-4 right-4 z-50 w-12 h-12 bg-primary-600 rounded-full flex items-center justify-center shadow-lg shadow-primary-500/20"
       >
-        {showRightPanel ? <PanelRightClose size={18} className="text-white" /> : <PanelRightOpen size={18} className="text-white" />}
+        {showRightPanel ? (
+          <PanelRightClose size={18} className="text-white" />
+        ) : (
+          <PanelRightOpen size={18} className="text-white" />
+        )}
       </button>
 
       {/* 오른쪽: 게임 정보 패널 */}
