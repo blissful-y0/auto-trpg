@@ -38,6 +38,8 @@ pnpm-debug.log*
 *.pem
 *.key
 *.p12
+.env.production
+.env.staging
 
 # Python
 __pycache__/
