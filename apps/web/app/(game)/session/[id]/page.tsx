@@ -112,8 +112,8 @@ export default function GameSessionPage() {
           id:
             msg.id ||
             `hist-${msg.created_at || 'unknown'}-${msg.sender_id || msg.sender_type || 'unknown'}-${idx}`,
-          type: msg.sender_type === 'gm' ? 'gm' : msg.is_ooc ? 'ooc' : 'player',
-          sender: msg.sender_type === 'gm' ? 'GM' : msg.sender_id || '플레이어',
+          type: msg.sender_type === 'gm' ? 'gm' : msg.sender_type === 'system' ? 'system' : msg.is_ooc ? 'ooc' : 'player',
+          sender: msg.sender_type === 'gm' ? 'GM' : msg.sender_type === 'system' ? '시스템' : msg.sender_id || '플레이어',
           content: msg.content,
           timestamp: new Date(msg.created_at).toLocaleTimeString('ko-KR', {
             hour: '2-digit',

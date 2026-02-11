@@ -360,6 +360,24 @@ export function registerHandlers(
         reason,
       });
 
+      // 주사위 결과를 메시지로 DB 저장
+      const diceResultText = reason
+        ? `🎲 ${reason}: ${notation} → [${rolls.join(', ')}] = ${total}`
+        : `🎲 ${notation} → [${rolls.join(', ')}] = ${total}`;
+
+      void supabaseAdmin
+        .from('messages')
+        .insert({
+          session_id: sessionId,
+          sender_type: 'system',
+          sender_id: user.userId,
+          content: diceResultText,
+          metadata: { dice, count: rollCount, modifier, rolls, total, reason },
+        })
+        .then(({ error: dbErr }: { error: { message: string } | null }) => {
+          if (dbErr) console.error('주사위 결과 메시지 저장 실패:', dbErr.message);
+        });
+
       // 주사위 결과를 GM에게 전달하여 후속 내러티브 생성
       if (reason) {
         const diceMessage = `[주사위 결과] ${reason}: ${notation} → [${rolls.join(', ')}] = ${total}`;
