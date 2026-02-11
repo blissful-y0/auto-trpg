@@ -68,6 +68,11 @@ export default function ChatPanel({ sessionId, sessionName, gameSystem }: Props)
       }),
     });
 
+    // IC 메시지일 때 GM 응답 대기 표시
+    if (!isOOC) {
+      useChatStore.getState().startStreaming();
+    }
+
     setInput('');
   };
 
@@ -190,6 +195,8 @@ export default function ChatPanel({ sessionId, sessionName, gameSystem }: Props)
                         modifier: match[3] ? parseInt(match[3], 10) : 0,
                         reason: req.purpose,
                       });
+                      // 주사위 결과 기반 GM 응답 대기 표시
+                      useChatStore.getState().startStreaming();
                     }}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gold/40 bg-gold/10 hover:bg-gold/20 text-gold text-xs font-medium transition-colors"
                   >

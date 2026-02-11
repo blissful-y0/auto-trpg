@@ -323,6 +323,8 @@ export function registerHandlers(
 
       const total = rolls.reduce((sum, r) => sum + r, 0) + modifier;
 
+      const notation = `${rollCount}${dice}${modifier > 0 ? `+${modifier}` : modifier < 0 ? `${modifier}` : ''}`;
+
       // 결과 브로드캐스트
       io.to(sessionId).emit('dice:result', {
         sessionId,
@@ -334,6 +336,49 @@ export function registerHandlers(
         total,
         reason,
       });
+
+      // 주사위 결과를 GM에게 전달하여 후속 내러티브 생성
+      if (reason) {
+        const diceMessage = `[주사위 결과] ${reason}: ${notation} → [${rolls.join(', ')}] = ${total}`;
+        actionQueue
+          .enqueue(sessionId, async () => {
+            return processWithGameEngine(sessionId, user.userId, diceMessage);
+          })
+          .then((result) => {
+            const response = result as GMResponse;
+            if (response.narrative) {
+              io.to(sessionId).emit('gm:response', {
+                sessionId,
+                response: {
+                  narrative: response.narrative,
+                  stateChanges: response.stateChanges || [],
+                  diceRequests: response.diceRolls || [],
+                },
+                timestamp: new Date().toISOString(),
+              });
+
+              // GM 후속 응답 DB 저장
+              void supabaseAdmin
+                .from('messages')
+                .insert({
+                  session_id: sessionId,
+                  sender_type: 'gm',
+                  content: response.narrative,
+                  metadata: {
+                    stateChanges: response.stateChanges,
+                    diceRequests: response.diceRolls,
+                    triggeredByDice: { notation, rolls, total, reason },
+                  },
+                })
+                .then(({ error: dbErr }: { error: { message: string } | null }) => {
+                  if (dbErr) console.error('GM 후속 응답 저장 실패:', dbErr.message);
+                });
+            }
+          })
+          .catch((err) => {
+            console.error('주사위 결과 GM 처리 실패:', err);
+          });
+      }
     } catch (err) {
       socket.emit('error', {
         code: 'DICE_ERROR',
