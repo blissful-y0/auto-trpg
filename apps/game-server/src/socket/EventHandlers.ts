@@ -233,6 +233,20 @@ export function registerHandlers(
       return;
     }
 
+    // 플레이어 메시지 DB 저장
+    void supabaseAdmin
+      .from('messages')
+      .insert({
+        session_id: sessionId,
+        sender_type: 'player',
+        sender_id: user.userId,
+        content: message,
+        metadata: { characterId },
+      })
+      .then(({ error: dbErr }: { error: { message: string } | null }) => {
+        if (dbErr) console.error('플레이어 메시지 저장 실패:', dbErr.message);
+      });
+
     actionQueue
       .enqueue(sessionId, async () => {
         return processWithGameEngine(sessionId, user.userId, message, characterId);
@@ -338,6 +352,20 @@ export function registerHandlers(
         socket.emit('error', { code: 'FORBIDDEN', message: '이 세션에서 채팅할 권한이 없습니다.' });
         return;
       }
+
+      // 플레이어 메시지 DB 저장 (OOC/IC 모두)
+      void supabaseAdmin
+        .from('messages')
+        .insert({
+          session_id: sessionId,
+          sender_type: 'player',
+          sender_id: user.userId,
+          content,
+          is_ooc: isOOC,
+        })
+        .then(({ error: dbErr }: { error: { message: string } | null }) => {
+          if (dbErr) console.error('채팅 메시지 저장 실패:', dbErr.message);
+        });
 
       if (isOOC) {
         // OOC 메시지: 단순 채팅 중계 (GM 개입 없음)
