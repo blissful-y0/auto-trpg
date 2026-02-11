@@ -13,7 +13,8 @@ export type TaskType =
   | 'gm_response'
   | 'intervention_check'
   | 'summarize'
-  | 'embedding';
+  | 'embedding'
+  | 'rerank';
 
 // ── 메시지 역할 ──
 export type MessageRole = 'system' | 'user' | 'assistant';

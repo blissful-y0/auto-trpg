@@ -1,7 +1,16 @@
 // pgvector + tsvector 하이브리드 검색 기반 규칙 검색기
+import crypto from 'crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Embedder } from './embedder';
-import type { GameContext, SearchOptions, SearchResult } from './types';
+import type { HotCache } from './hot-cache';
+import type { Reranker } from './reranker';
+import type { RuleChainer } from './rule-chainer';
+import type {
+  EnhancedSearchResult,
+  GameContext,
+  SearchOptions,
+  SearchResult,
+} from './types';
 
 /** 검색 가중치 설정 */
 interface RetrieverConfig {
@@ -25,11 +34,26 @@ interface CacheEntry {
   timestamp: number;
 }
 
+/** 강화 검색 옵션 */
+interface EnhancedSearchOptions extends SearchOptions {
+  /** 리랭킹 활성화 여부 (기본 true) */
+  enableReranking?: boolean;
+  /** 규칙 체이닝 활성화 여부 (기본 true) */
+  enableChaining?: boolean;
+  /** 핫 캐시 사용 여부 (기본 true) */
+  enableHotCache?: boolean;
+}
+
 export class RuleRetriever {
   private config: RetrieverConfig;
   private supabase: SupabaseClient;
   private embedder: Embedder;
   private cache: Map<string, CacheEntry> = new Map();
+
+  // 강화 검색 컴포넌트 (선택적 주입)
+  private reranker: Reranker | null = null;
+  private ruleChainer: RuleChainer | null = null;
+  private hotCache: HotCache | null = null;
 
   constructor(
     supabase: SupabaseClient,
@@ -39,6 +63,17 @@ export class RuleRetriever {
     this.supabase = supabase;
     this.embedder = embedder;
     this.config = { ...DEFAULT_CONFIG, ...config };
+  }
+
+  /** 강화 검색 컴포넌트 설정 */
+  setEnhancedComponents(components: {
+    reranker?: Reranker;
+    ruleChainer?: RuleChainer;
+    hotCache?: HotCache;
+  }): void {
+    if (components.reranker) this.reranker = components.reranker;
+    if (components.ruleChainer) this.ruleChainer = components.ruleChainer;
+    if (components.hotCache) this.hotCache = components.hotCache;
   }
 
   /** 쿼리로 관련 규칙 청크 검색 (하이브리드: 벡터 + 텍스트) */
@@ -75,6 +110,140 @@ export class RuleRetriever {
       similarity: row.similarity as number,
       textRank: row.text_rank as number,
     }));
+  }
+
+  /** 강화 검색: 하이브리드 검색 → 리랭킹 → 규칙 체이닝 → 핫 캐시 */
+  async searchEnhanced(
+    query: string,
+    options: EnhancedSearchOptions,
+    gameContext?: GameContext,
+  ): Promise<EnhancedSearchResult> {
+    const startTime = Date.now();
+    const enableReranking = options.enableReranking ?? true;
+    const enableChaining = options.enableChaining ?? true;
+    const enableHotCache = options.enableHotCache ?? true;
+    let cacheHits = 0;
+
+    // 1. 핫 캐시에서 검색 결과 조회
+    const queryHash = this.hashQuery(query, options);
+    if (enableHotCache && this.hotCache) {
+      const cached = await this.hotCache.getSearchResult(queryHash);
+      if (cached) {
+        const rulebookId = options.rulebookIds[0];
+        if (rulebookId) {
+          await this.hotCache.recordHit(rulebookId);
+        }
+        cacheHits = cached.length;
+        return {
+          results: cached.map((r) => ({
+            ...r,
+            originalScore: r.similarity * 0.7 + r.textRank * 0.3,
+            relevanceScore: r.similarity * 0.7 + r.textRank * 0.3,
+          })),
+          chained: [],
+          meta: {
+            originalCount: cached.length,
+            rerankedCount: cached.length,
+            chainedCount: 0,
+            cacheHits,
+            latencyMs: Date.now() - startTime,
+          },
+        };
+      }
+    }
+
+    // 2. 하이브리드 검색 (리랭킹 대비 더 많은 후보 검색)
+    const searchLimit = enableReranking && this.reranker
+      ? Math.max(20, (options.limit ?? 5) * 4)
+      : options.limit;
+
+    const rawResults = await this.search(query, { ...options, limit: searchLimit });
+    const originalCount = rawResults.length;
+
+    // 3. 리랭킹
+    let finalResults;
+    if (enableReranking && this.reranker && rawResults.length > 0) {
+      finalResults = await this.reranker.rerank(query, rawResults, gameContext);
+    } else {
+      finalResults = rawResults.map((r) => ({
+        ...r,
+        originalScore: r.similarity * 0.7 + r.textRank * 0.3,
+        relevanceScore: r.similarity * 0.7 + r.textRank * 0.3,
+      }));
+    }
+
+    // 4. 규칙 체이닝
+    let chainedRules: EnhancedSearchResult['chained'] = [];
+    if (enableChaining && this.ruleChainer && finalResults.length > 0) {
+      // RerankResult → SearchResult 변환하여 체이닝
+      const searchResults: SearchResult[] = finalResults.map((r) => ({
+        id: r.id,
+        content: r.content,
+        page: r.page,
+        chapter: r.chapter,
+        section: r.section,
+        category: r.category,
+        similarity: r.relevanceScore,
+        textRank: 0,
+      }));
+
+      try {
+        const { chained } = await this.ruleChainer.chain(
+          searchResults,
+          options.rulebookIds,
+        );
+        chainedRules = chained;
+      } catch (error) {
+        console.error('[RuleRetriever] 규칙 체이닝 실패:', error);
+      }
+    }
+
+    // 5. 핫 캐시에 결과 저장 + 접근 횟수 기록
+    if (enableHotCache && this.hotCache) {
+      const cacheResults: SearchResult[] = finalResults.map((r) => ({
+        id: r.id,
+        content: r.content,
+        page: r.page,
+        chapter: r.chapter,
+        section: r.section,
+        category: r.category,
+        similarity: r.relevanceScore,
+        textRank: 0,
+      }));
+
+      await this.hotCache.setSearchResult(queryHash, cacheResults);
+
+      const rulebookId = options.rulebookIds[0];
+      if (rulebookId) {
+        await this.hotCache.setMany(cacheResults, rulebookId);
+        for (const result of cacheResults) {
+          await this.hotCache.recordAccess(result.id, rulebookId);
+        }
+      }
+    }
+
+    return {
+      results: finalResults,
+      chained: chainedRules,
+      meta: {
+        originalCount,
+        rerankedCount: finalResults.length,
+        chainedCount: chainedRules.length,
+        cacheHits,
+        latencyMs: Date.now() - startTime,
+      },
+    };
+  }
+
+  /** 검색 쿼리 해시 생성 (캐시 키용) */
+  private hashQuery(query: string, options: SearchOptions): string {
+    const input = JSON.stringify({
+      q: query,
+      rb: options.rulebookIds.sort(),
+      cat: options.categories?.sort(),
+      lim: options.limit,
+    });
+    return crypto.createHash('sha256').update(input).digest('hex').slice(0, 16);
   }
 
   /** 게임 액션에서 검색 쿼리 생성 */
