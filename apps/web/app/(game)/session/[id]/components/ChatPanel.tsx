@@ -11,6 +11,7 @@ import {
   Loader2,
   MessageCircle,
   ArrowLeft,
+  Dices,
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -168,6 +169,35 @@ export default function ChatPanel({ sessionId, sessionName, gameSystem }: Props)
                 <span className="font-bold text-gold font-mono">
                   = {msg.diceResult.total}
                 </span>
+              </div>
+            )}
+
+            {/* GM 주사위 제안 버튼 */}
+            {msg.diceRequests && msg.diceRequests.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {msg.diceRequests.map((req, idx) => (
+                  <button
+                    key={`${msg.id}-dice-${idx}`}
+                    onClick={() => {
+                      const socket = getSocket();
+                      if (!socket || status !== 'connected') return;
+                      const match = req.notation.match(/^(\d*)d(\d+)([+-]\d+)?$/i);
+                      if (!match) return;
+                      socket.emit('dice:roll', {
+                        sessionId,
+                        dice: `d${match[2]}`,
+                        count: match[1] ? parseInt(match[1], 10) : 1,
+                        modifier: match[3] ? parseInt(match[3], 10) : 0,
+                        reason: req.purpose,
+                      });
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gold/40 bg-gold/10 hover:bg-gold/20 text-gold text-xs font-medium transition-colors"
+                  >
+                    <Dices size={14} />
+                    <span>{req.notation}</span>
+                    <span className="text-text-tertiary">({req.purpose}{req.dc ? ` DC${req.dc}` : ''})</span>
+                  </button>
+                ))}
               </div>
             )}
           </div>

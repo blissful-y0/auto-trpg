@@ -7,7 +7,11 @@ const SOCKET_URL =
 interface ServerEvents {
   'gm:response': (payload: {
     sessionId: string;
-    response: { narrative: string; stateChanges?: unknown[] };
+    response: {
+      narrative: string;
+      stateChanges?: unknown[];
+      diceRequests?: Array<{ notation: string; purpose: string; dc?: number }>;
+    };
     timestamp: string;
   }) => void;
   'gm:stream': (payload: {

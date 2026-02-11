@@ -246,6 +246,7 @@ export function registerHandlers(
           response: {
             narrative: response.narrative,
             stateChanges: response.stateChanges || [],
+            diceRequests: response.diceRolls || [],
           },
           timestamp: new Date().toISOString(),
         });
@@ -361,6 +362,7 @@ export function registerHandlers(
               response: {
                 narrative: response.narrative,
                 stateChanges: response.stateChanges || [],
+                diceRequests: response.diceRolls || [],
               },
               timestamp: new Date().toISOString(),
             });
@@ -374,7 +376,7 @@ export function registerHandlers(
                 content: response.narrative,
                 metadata: {
                   stateChanges: response.stateChanges,
-                  diceRolls: response.diceRolls,
+                  diceRequests: response.diceRolls,
                 },
               })
               .then(({ error: dbErr }: { error: { message: string } | null }) => {
@@ -449,6 +451,7 @@ export function registerHandlers(
             response: {
               narrative: response.narrative,
               stateChanges: response.stateChanges || [],
+              diceRequests: response.diceRolls || [],
             },
             timestamp: new Date().toISOString(),
           });

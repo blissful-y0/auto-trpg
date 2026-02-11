@@ -37,6 +37,26 @@ function getBudgetProfile(actionType: ActionType): BudgetProfile {
   return mapping[actionType];
 }
 
+
+// 비숫자 수정치를 제거하고 유효한 주사위 표기법으로 정리
+function sanitizeDiceNotation(notation: string): string {
+  const trimmed = notation.trim();
+
+  // 이미 유효한 표기법이면 그대로 반환
+  if (/^\d*d\d+([+-]\d+)?$/i.test(trimmed)) {
+    return trimmed;
+  }
+
+  // 비숫자 수정치 패턴 감지: "1d20+religion_modifier", "2d6+str_bonus" 등
+  const partialMatch = trimmed.match(/^(\d*d\d+)[+-][a-zA-Z_]+.*$/i);
+  if (partialMatch) {
+    // 수정치 부분을 제거하고 주사위만 반환
+    return partialMatch[1];
+  }
+
+  return trimmed;
+}
+
 export class GameEngine {
   constructor(
     private contextManager: ContextManager,
@@ -119,17 +139,12 @@ export class GameEngine {
     const { GM_TOOLS } = await import('./gmTools');
     const gmResponse = await this.llmRouter.call(messages, [...GM_TOOLS]);
 
-    // 6. 주사위 굴림 처리
+    // 6. 주사위 제안 처리 (GM은 제안만, 실제 굴림은 유저가 수행)
     if (gmResponse.diceRolls && gmResponse.diceRolls.length > 0) {
-      const rollResults = gmResponse.diceRolls.map((r) => this.handleDiceRoll(r));
-      // 굴림 결과를 내러티브에 추가
-      const rollText = rollResults
-        .map((r, i) => {
-          const req = gmResponse.diceRolls![i];
-          return `🎲 ${req.purpose}: ${req.notation} → [${r.rolls.join(', ')}] = **${r.total}**`;
-        })
-        .join('\n');
-      gmResponse.narrative += `\n\n${rollText}`;
+      gmResponse.diceRolls = gmResponse.diceRolls.map((r) => ({
+        ...r,
+        notation: sanitizeDiceNotation(r.notation),
+      }));
     }
 
     // 7. 상태 변경 적용
