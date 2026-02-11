@@ -8,7 +8,7 @@
     "build": "tsc",
     "type-check": "tsc --noEmit",
     "test": "vitest run --passWithNoTests",
-    "clean": "rm -rf dist",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo",
     "dev": "tsc --watch"
   },
   "dependencies": {
