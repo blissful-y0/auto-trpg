@@ -1,6 +1,6 @@
 // Socket.io 모듈 re-export
 
-export { createSocketServer, roomManager, actionQueue } from './SocketServer';
+export { createSocketServer, setSocketServices, roomManager, actionQueue } from './SocketServer';
 export type { TypedSocketServer } from './SocketServer';
 export { RoomManager } from './RoomManager';
 export { ActionQueue } from './ActionQueue';

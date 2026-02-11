@@ -101,3 +101,9 @@ export const MAX_MESSAGES = 500;
 
 // 영속화 주기 (밀리초)
 export const PERSIST_INTERVAL = 5 * 60 * 1000; // 5분
+
+// 자동 세이브 주기 (밀리초) — PERSIST_INTERVAL과 동일
+export const AUTO_SAVE_INTERVAL = 5 * 60 * 1000; // 5분
+
+// 자동 세이브 최대 보관 수 (세션당)
+export const MAX_AUTO_SAVES = 10;
