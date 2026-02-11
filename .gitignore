@@ -57,3 +57,4 @@ functions/*/.build/
 
 # Claude Code
 .claude/
+.serena/
