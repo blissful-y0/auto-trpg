@@ -93,8 +93,13 @@ export const characterApi = {
 
 // 채팅 API
 export const chatApi = {
-  getMessages: (sessionId: string) =>
-    fetchApi<{ data: unknown[] }>(`/api/sessions/${sessionId}/messages`),
+  getMessages: (sessionId: string, options?: { before?: string; limit?: number }) => {
+    const params = new URLSearchParams();
+    if (options?.before) params.set('before', options.before);
+    if (options?.limit) params.set('limit', String(options.limit));
+    const qs = params.toString();
+    return fetchApi<{ data: unknown[] }>(`/api/sessions/${sessionId}/messages${qs ? `?${qs}` : ''}`);
+  },
   sendMessage: (sessionId: string, content: string, isOOC: boolean) =>
     fetchApi<{ data: unknown }>(`/api/sessions/${sessionId}/messages`, {
       method: 'POST',

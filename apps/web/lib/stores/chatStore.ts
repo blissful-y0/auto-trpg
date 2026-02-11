@@ -33,6 +33,7 @@ interface ChatState {
 
   // 메시지 액션
   addMessage: (message: ChatMessage) => void;
+  prependMessages: (messages: ChatMessage[]) => void;
   clearMessages: () => void;
 
   // 스트리밍 액션
@@ -49,6 +50,11 @@ export const useChatStore = create<ChatState>((set) => ({
   addMessage: (message) =>
     set((state) => ({
       messages: [...state.messages, message],
+    })),
+
+  prependMessages: (messages) =>
+    set((state) => ({
+      messages: [...messages, ...state.messages],
     })),
 
   clearMessages: () => set({ messages: [] }),
