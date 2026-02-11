@@ -71,6 +71,30 @@ export interface CombatActionPayload {
   targetId?: string;
 }
 
+// ─── 세이브/로드 이벤트 페이로드 ────────────────────────
+
+export interface SessionSavePayload {
+  sessionId: string;
+  name?: string;
+}
+
+export interface SessionLoadPayload {
+  sessionId: string;
+  savePointId: string;
+}
+
+export interface SessionPausePayload {
+  sessionId: string;
+}
+
+export interface SessionResumePayload {
+  sessionId: string;
+}
+
+export interface SessionCostReportPayload {
+  sessionId: string;
+}
+
 // 클라이언트 이벤트 맵
 export interface ClientEvents {
   'player:action': (payload: PlayerActionPayload) => void;
@@ -80,6 +104,11 @@ export interface ClientEvents {
   'chat:message': (payload: ChatMessagePayload) => void;
   'game:start': (payload: GameStartPayload) => void;
   'combat:action': (payload: CombatActionPayload) => void;
+  'session:save': (payload: SessionSavePayload) => void;
+  'session:load': (payload: SessionLoadPayload) => void;
+  'session:pause': (payload: SessionPausePayload) => void;
+  'session:resume': (payload: SessionResumePayload) => void;
+  'session:costReport': (payload: SessionCostReportPayload) => void;
 }
 
 // 서버 → 클라이언트 이벤트 페이로드
@@ -88,6 +117,7 @@ export interface GMResponsePayload {
   response: {
     narrative: string;
     stateChanges?: unknown[];
+    diceRequests?: Array<{ notation: string; purpose: string; dc?: number }>;
   };
   timestamp: string;
 }
@@ -138,6 +168,41 @@ export interface ErrorPayload {
   message: string;
 }
 
+// ─── 세이브/로드 서버 이벤트 페이로드 ───────────────────
+
+export interface SaveCompletePayload {
+  sessionId: string;
+  savePointId: string;
+  saveType: 'manual' | 'auto' | 'pause';
+  name: string;
+  timestamp: string;
+}
+
+export interface LoadCompletePayload {
+  sessionId: string;
+  savePointId: string;
+  snapshot: unknown;
+}
+
+export interface SessionPausedPayload {
+  sessionId: string;
+  savePointId: string;
+  pausedBy: string;
+  timestamp: string;
+}
+
+export interface SessionResumedPayload {
+  sessionId: string;
+  resumedBy: string;
+  timestamp: string;
+}
+
+export interface AutoSaveIndicatorPayload {
+  sessionId: string;
+  status: 'saving' | 'saved' | 'error';
+  timestamp: string;
+}
+
 // 서버 이벤트 맵
 export interface ServerEvents {
   'gm:response': (payload: GMResponsePayload) => void;
@@ -147,7 +212,28 @@ export interface ServerEvents {
   'player:left': (payload: PlayerLeftPayload) => void;
   'dice:result': (payload: DiceResultPayload) => void;
   'combat:update': (payload: CombatUpdatePayload) => void;
+  'session:saveComplete': (payload: SaveCompletePayload) => void;
+  'session:loadComplete': (payload: LoadCompletePayload) => void;
+  'session:paused': (payload: SessionPausedPayload) => void;
+  'session:resumed': (payload: SessionResumedPayload) => void;
+  'session:autoSaveIndicator': (payload: AutoSaveIndicatorPayload) => void;
+  'session:costReportResult': (payload: SessionCostReportResultPayload) => void;
   'error': (payload: ErrorPayload) => void;
+}
+
+export interface SessionCostReportResultPayload {
+  sessionId: string;
+  totalCalls: number;
+  totalTokens: number;
+  estimatedCostUSD: number;
+  estimatedCostKRW: number;
+  byModel: Array<{
+    model: string;
+    provider: string;
+    callCount: number;
+    totalTokens: number;
+    estimatedCostUSD: number;
+  }>;
 }
 
 // 소켓 데이터 (socket.data에 저장)

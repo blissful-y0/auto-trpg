@@ -13,7 +13,8 @@ export type TaskType =
   | 'gm_response'
   | 'intervention_check'
   | 'summarize'
-  | 'embedding';
+  | 'embedding'
+  | 'rerank';
 
 // ── 메시지 역할 ──
 export type MessageRole = 'system' | 'user' | 'assistant';
@@ -42,6 +43,8 @@ export interface LLMRequest {
   tools?: LLMToolDefinition[];
   /** 시스템 프롬프트 (별도 지정 시 messages의 system 역할과 합산) */
   systemPrompt?: string;
+  /** Tool 사용 강제 여부: 'required' = 반드시 tool 사용, 'auto' = LLM 판단 */
+  toolChoice?: 'auto' | 'required';
 }
 
 // ── 응답 ──
@@ -104,6 +107,9 @@ export interface LLMProvider {
 
   /** Tool Use (구조화 출력) */
   generateWithTools(request: LLMRequest): Promise<LLMToolResponse>;
+
+  /** 임베딩 생성 (optional — embedding 태스크를 지원하는 프로바이더만 구현) */
+  generateEmbedding?(text: string, model?: string): Promise<{ embedding: number[]; usage: TokenUsage }>;
 
   /** 토큰 카운팅 (근사치) */
   countTokens(text: string): number;

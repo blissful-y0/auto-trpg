@@ -12,13 +12,21 @@ import type {
   ChatMessagePayload,
   GameStartPayload,
   CombatActionPayload,
+  SessionSavePayload,
+  SessionLoadPayload,
+  SessionPausePayload,
+  SessionResumePayload,
+  SessionCostReportPayload,
 } from './types';
 import type { RoomManager } from './RoomManager';
 import type { ActionQueue } from './ActionQueue';
 import { createGameEngineForSession } from '../bootstrap';
 import { supabaseAdmin } from '../lib/supabase';
 import type { GMResponse } from '../services/game/gmTools';
+import { getSessionCostReport } from '../services/llm/tokenCost';
 import type { GameSessionInfo, CharacterInfo } from '../services/context/ContextManager';
+import type { SaveManager } from '../services/redis/SaveManager';
+import type { PersistenceManager } from '../services/redis/PersistenceManager';
 
 type TypedServer = Server<ClientEvents, ServerEvents, Record<string, never>, SocketData>;
 type TypedSocket = Socket<ClientEvents, ServerEvents, Record<string, never>, SocketData>;
@@ -146,6 +154,8 @@ export function registerHandlers(
   socket: TypedSocket,
   roomManager: RoomManager,
   actionQueue: ActionQueue,
+  saveManager?: SaveManager,
+  persistenceManager?: PersistenceManager,
 ): void {
   const user = socket.data.user;
 
@@ -225,6 +235,20 @@ export function registerHandlers(
       return;
     }
 
+    // 플레이어 메시지 DB 저장
+    void supabaseAdmin
+      .from('messages')
+      .insert({
+        session_id: sessionId,
+        sender_type: 'player',
+        sender_id: user.userId,
+        content: message,
+        metadata: { characterId },
+      })
+      .then(({ error: dbErr }: { error: { message: string } | null }) => {
+        if (dbErr) console.error('플레이어 메시지 저장 실패:', dbErr.message);
+      });
+
     actionQueue
       .enqueue(sessionId, async () => {
         return processWithGameEngine(sessionId, user.userId, message, characterId);
@@ -238,6 +262,7 @@ export function registerHandlers(
           response: {
             narrative: response.narrative,
             stateChanges: response.stateChanges || [],
+            diceRequests: response.diceRolls || [],
           },
           timestamp: new Date().toISOString(),
         });
@@ -267,6 +292,27 @@ export function registerHandlers(
           .then(({ error: dbErr }: { error: { message: string } | null }) => {
             if (dbErr) console.error('GM 메시지 저장 실패:', dbErr.message);
           });
+
+        // 토큰 사용량 기록
+        if (response.tokenUsage) {
+          void supabaseAdmin
+            .from('game_events')
+            .insert({
+              session_id: sessionId,
+              event_type: 'token_usage',
+              actor_id: user.userId,
+              data: {
+                promptTokens: response.tokenUsage.promptTokens,
+                completionTokens: response.tokenUsage.completionTokens,
+                totalTokens: response.tokenUsage.totalTokens,
+                model: response.tokenUsage.model,
+                provider: response.tokenUsage.provider,
+              },
+            })
+            .then(({ error: dbErr }: { error: { message: string } | null }) => {
+              if (dbErr) console.error('토큰 사용량 기록 실패:', dbErr.message);
+            });
+        }
       })
       .catch((err) => {
         socket.emit('error', {
@@ -300,6 +346,8 @@ export function registerHandlers(
 
       const total = rolls.reduce((sum, r) => sum + r, 0) + modifier;
 
+      const notation = `${rollCount}${dice}${modifier > 0 ? `+${modifier}` : modifier < 0 ? `${modifier}` : ''}`;
+
       // 결과 브로드캐스트
       io.to(sessionId).emit('dice:result', {
         sessionId,
@@ -311,6 +359,49 @@ export function registerHandlers(
         total,
         reason,
       });
+
+      // 주사위 결과를 GM에게 전달하여 후속 내러티브 생성
+      if (reason) {
+        const diceMessage = `[주사위 결과] ${reason}: ${notation} → [${rolls.join(', ')}] = ${total}`;
+        actionQueue
+          .enqueue(sessionId, async () => {
+            return processWithGameEngine(sessionId, user.userId, diceMessage);
+          })
+          .then((result) => {
+            const response = result as GMResponse;
+            if (response.narrative) {
+              io.to(sessionId).emit('gm:response', {
+                sessionId,
+                response: {
+                  narrative: response.narrative,
+                  stateChanges: response.stateChanges || [],
+                  diceRequests: response.diceRolls || [],
+                },
+                timestamp: new Date().toISOString(),
+              });
+
+              // GM 후속 응답 DB 저장
+              void supabaseAdmin
+                .from('messages')
+                .insert({
+                  session_id: sessionId,
+                  sender_type: 'gm',
+                  content: response.narrative,
+                  metadata: {
+                    stateChanges: response.stateChanges,
+                    diceRequests: response.diceRolls,
+                    triggeredByDice: { notation, rolls, total, reason },
+                  },
+                })
+                .then(({ error: dbErr }: { error: { message: string } | null }) => {
+                  if (dbErr) console.error('GM 후속 응답 저장 실패:', dbErr.message);
+                });
+            }
+          })
+          .catch((err) => {
+            console.error('주사위 결과 GM 처리 실패:', err);
+          });
+      }
     } catch (err) {
       socket.emit('error', {
         code: 'DICE_ERROR',
@@ -329,6 +420,20 @@ export function registerHandlers(
         socket.emit('error', { code: 'FORBIDDEN', message: '이 세션에서 채팅할 권한이 없습니다.' });
         return;
       }
+
+      // 플레이어 메시지 DB 저장 (OOC/IC 모두)
+      void supabaseAdmin
+        .from('messages')
+        .insert({
+          session_id: sessionId,
+          sender_type: 'player',
+          sender_id: user.userId,
+          content,
+          is_ooc: isOOC,
+        })
+        .then(({ error: dbErr }: { error: { message: string } | null }) => {
+          if (dbErr) console.error('채팅 메시지 저장 실패:', dbErr.message);
+        });
 
       if (isOOC) {
         // OOC 메시지: 단순 채팅 중계 (GM 개입 없음)
@@ -353,6 +458,7 @@ export function registerHandlers(
               response: {
                 narrative: response.narrative,
                 stateChanges: response.stateChanges || [],
+                diceRequests: response.diceRolls || [],
               },
               timestamp: new Date().toISOString(),
             });
@@ -366,12 +472,33 @@ export function registerHandlers(
                 content: response.narrative,
                 metadata: {
                   stateChanges: response.stateChanges,
-                  diceRolls: response.diceRolls,
+                  diceRequests: response.diceRolls,
                 },
               })
               .then(({ error: dbErr }: { error: { message: string } | null }) => {
                 if (dbErr) console.error('GM 메시지 저장 실패:', dbErr.message);
               });
+
+            // 토큰 사용량 기록
+            if (response.tokenUsage) {
+              void supabaseAdmin
+                .from('game_events')
+                .insert({
+                  session_id: sessionId,
+                  event_type: 'token_usage',
+                  actor_id: user.userId,
+                  data: {
+                    promptTokens: response.tokenUsage.promptTokens,
+                    completionTokens: response.tokenUsage.completionTokens,
+                    totalTokens: response.tokenUsage.totalTokens,
+                    model: response.tokenUsage.model,
+                    provider: response.tokenUsage.provider,
+                  },
+                })
+                .then(({ error: dbErr }: { error: { message: string } | null }) => {
+                  if (dbErr) console.error('토큰 사용량 기록 실패:', dbErr.message);
+                });
+            }
           })
           .catch((err) => {
             socket.emit('error', {
@@ -441,6 +568,7 @@ export function registerHandlers(
             response: {
               narrative: response.narrative,
               stateChanges: response.stateChanges || [],
+              diceRequests: response.diceRolls || [],
             },
             timestamp: new Date().toISOString(),
           });
@@ -466,6 +594,194 @@ export function registerHandlers(
       socket.emit('error', {
         code: 'COMBAT_ERROR',
         message: err instanceof Error ? err.message : '전투 액션 처리 중 오류가 발생했습니다.',
+      });
+    }
+  });
+
+  // ─── 세이브/로드/일시정지/재개 이벤트 ──────────────────
+
+  // session:save — 수동 세이브
+  socket.on('session:save', async (payload: SessionSavePayload) => {
+    try {
+      const { sessionId, name } = payload;
+
+      const authorized = await requireSessionMembership(sessionId, user.userId, roomManager);
+      if (!authorized) {
+        socket.emit('error', {
+          code: 'FORBIDDEN',
+          message: '이 세션에서 세이브할 권한이 없습니다.',
+        });
+        return;
+      }
+
+      if (!saveManager) {
+        socket.emit('error', { code: 'SAVE_ERROR', message: '세이브 기능이 비활성화되어 있습니다.' });
+        return;
+      }
+
+      const result = await saveManager.save(sessionId, user.userId, name);
+
+      io.to(sessionId).emit('session:saveComplete', {
+        sessionId,
+        savePointId: result.id,
+        saveType: 'manual' as const,
+        name: result.name,
+        timestamp: result.createdAt,
+      });
+    } catch (err) {
+      socket.emit('error', {
+        code: 'SAVE_ERROR',
+        message: err instanceof Error ? err.message : '세이브 중 오류가 발생했습니다.',
+      });
+    }
+  });
+
+  // session:load — 세이브 로드
+  socket.on('session:load', async (payload: SessionLoadPayload) => {
+    try {
+      const { sessionId, savePointId } = payload;
+
+      const authorized = await requireSessionMembership(sessionId, user.userId, roomManager);
+      if (!authorized) {
+        socket.emit('error', {
+          code: 'FORBIDDEN',
+          message: '이 세션에서 로드할 권한이 없습니다.',
+        });
+        return;
+      }
+
+      if (!saveManager) {
+        socket.emit('error', { code: 'LOAD_ERROR', message: '로드 기능이 비활성화되어 있습니다.' });
+        return;
+      }
+
+      const snapshot = await saveManager.load(sessionId, savePointId);
+
+      io.to(sessionId).emit('session:loadComplete', {
+        sessionId,
+        savePointId,
+        snapshot,
+      });
+    } catch (err) {
+      socket.emit('error', {
+        code: 'LOAD_ERROR',
+        message: err instanceof Error ? err.message : '로드 중 오류가 발생했습니다.',
+      });
+    }
+  });
+
+  // session:pause — 일시정지
+  socket.on('session:pause', async (payload: SessionPausePayload) => {
+    try {
+      const { sessionId } = payload;
+
+      const isCreator = await isSessionCreator(sessionId, user.userId);
+      if (!isCreator) {
+        socket.emit('error', {
+          code: 'FORBIDDEN',
+          message: '세션 생성자만 일시정지할 수 있습니다.',
+        });
+        return;
+      }
+
+      if (!saveManager || !persistenceManager) {
+        socket.emit('error', { code: 'PAUSE_ERROR', message: '일시정지 기능이 비활성화되어 있습니다.' });
+        return;
+      }
+
+      const saveResult = await saveManager.savePause(sessionId, user.userId);
+
+      await supabaseAdmin
+        .from('game_sessions')
+        .update({ status: 'paused', updated_at: new Date().toISOString() })
+        .eq('id', sessionId);
+
+      await persistenceManager.flushSession(sessionId);
+
+      io.to(sessionId).emit('session:paused', {
+        sessionId,
+        savePointId: saveResult.id,
+        pausedBy: user.userId,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err) {
+      socket.emit('error', {
+        code: 'PAUSE_ERROR',
+        message: err instanceof Error ? err.message : '일시정지 중 오류가 발생했습니다.',
+      });
+    }
+  });
+
+  // session:resume — 재개
+  socket.on('session:resume', async (payload: SessionResumePayload) => {
+    try {
+      const { sessionId } = payload;
+
+      const isCreator = await isSessionCreator(sessionId, user.userId);
+      if (!isCreator) {
+        socket.emit('error', {
+          code: 'FORBIDDEN',
+          message: '세션 생성자만 재개할 수 있습니다.',
+        });
+        return;
+      }
+
+      if (!persistenceManager) {
+        socket.emit('error', { code: 'RESUME_ERROR', message: '재개 기능이 비활성화되어 있습니다.' });
+        return;
+      }
+
+      await supabaseAdmin
+        .from('game_sessions')
+        .update({ status: 'active', updated_at: new Date().toISOString() })
+        .eq('id', sessionId);
+
+      await persistenceManager.loadSession(sessionId);
+
+      io.to(sessionId).emit('session:resumed', {
+        sessionId,
+        resumedBy: user.userId,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err) {
+      socket.emit('error', {
+        code: 'RESUME_ERROR',
+        message: err instanceof Error ? err.message : '재개 중 오류가 발생했습니다.',
+      });
+    }
+  });
+
+  // session:costReport — 세션별 토큰 비용 리포트
+  socket.on('session:costReport', async (payload: SessionCostReportPayload) => {
+    try {
+      const { sessionId } = payload;
+
+      const authorized = await requireSessionMembership(sessionId, user.userId, roomManager);
+      if (!authorized) {
+        socket.emit('error', { code: 'FORBIDDEN', message: '이 세션의 리포트를 조회할 권한이 없습니다.' });
+        return;
+      }
+
+      const report = await getSessionCostReport(supabaseAdmin, sessionId);
+
+      socket.emit('session:costReportResult', {
+        sessionId: report.sessionId,
+        totalCalls: report.totalCalls,
+        totalTokens: report.totalTokens,
+        estimatedCostUSD: report.estimatedCostUSD,
+        estimatedCostKRW: report.estimatedCostKRW,
+        byModel: report.byModel.map((m) => ({
+          model: m.model,
+          provider: m.provider,
+          callCount: m.callCount,
+          totalTokens: m.totalTokens,
+          estimatedCostUSD: m.estimatedCostUSD,
+        })),
+      });
+    } catch (err) {
+      socket.emit('error', {
+        code: 'COST_REPORT_ERROR',
+        message: err instanceof Error ? err.message : '비용 리포트 조회 중 오류가 발생했습니다.',
       });
     }
   });

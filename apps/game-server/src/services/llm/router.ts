@@ -32,6 +32,11 @@ const DEFAULT_ROUTING: Record<TaskType, ModelRouting[]> = {
     { providerId: 'claude', model: 'claude-haiku-3-5-20241022', priority: 3 },
   ],
   embedding: [{ providerId: 'openai', model: 'text-embedding-3-small', priority: 1 }],
+  rerank: [
+    { providerId: 'claude', model: 'claude-haiku-3-5-20241022', priority: 1 },
+    { providerId: 'gemini', model: 'gemini-2.0-flash', priority: 2 },
+    { providerId: 'openai', model: 'gpt-4o-mini', priority: 3 },
+  ],
 };
 
 /** 프로바이더별 팩토리 */
@@ -122,6 +127,15 @@ export class LLMRouter {
   }
 
   /** 특정 프로바이더 직접 가져오기 */
+  /** 임베딩 생성 (embedding 태스크 라우팅 사용) */
+  async generateEmbedding(text: string): Promise<{ embedding: number[]; usage: { promptTokens: number; completionTokens: number; totalTokens: number } }> {
+    const { provider, model } = this.getProviderForTask('embedding');
+    if (!provider.generateEmbedding) {
+      throw new Error(`프로바이더 '${provider.providerId}'는 임베딩을 지원하지 않습니다.`);
+    }
+    return provider.generateEmbedding(text, model);
+  }
+
   getProviderById(providerId: LLMProviderId): LLMProvider {
     return this.getOrCreateProvider(providerId);
   }

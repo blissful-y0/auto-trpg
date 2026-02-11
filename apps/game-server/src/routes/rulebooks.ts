@@ -7,6 +7,10 @@ import { supabaseAdmin } from '../lib/supabase';
 import { config } from '../config';
 import { AppError } from '../middleware/errorHandler';
 import { assertRulebookAccess } from '../lib/authorization';
+import { extractTextFromS3 } from '../services/rag/pdf-extractor';
+import { RulebookProcessor } from '../services/rag/processor';
+import { SemanticChunker } from '../services/rag/chunker';
+import { Embedder } from '../services/rag/embedder';
 
 const router = Router();
 
@@ -118,7 +122,12 @@ router.post('/:id/process', async (req: Request, res: Response, next: NextFuncti
     // 상태를 processing으로 변경
     const { data: updated, error } = await supabaseAdmin
       .from('rulebooks')
-      .update({ status: 'processing' })
+      .update({
+        status: 'processing',
+        processing_status: 'pending',
+        processing_error: null,
+        updated_at: new Date().toISOString(),
+      })
       .eq('id', id)
       .select()
       .single();
@@ -127,7 +136,10 @@ router.post('/:id/process', async (req: Request, res: Response, next: NextFuncti
       throw new AppError(500, `상태 변경 실패: ${error.message}`);
     }
 
-    // TODO: Lambda 함수 호출로 실제 처리 시작 (Phase 1.7에서 구현)
+    // 비동기 처리 시작 (fire-and-forget)
+    processRulebookAsync(updated.id, updated.s3_key).catch((err) => {
+      console.error(`[규칙서 처리 실패] ${updated.id}:`, err);
+    });
 
     res.json({ data: updated });
   } catch (err) {
@@ -233,5 +245,43 @@ router.delete('/:id', async (req: Request, res: Response, next: NextFunction) =>
     next(err);
   }
 });
+
+// ─── 비동기 처리 파이프라인 ───────────────────────────────
+
+/** 규칙서 비동기 처리: S3 다운로드 → 텍스트 추출 → 청킹 → 임베딩 → 저장 */
+async function processRulebookAsync(rulebookId: string, s3Key: string): Promise<void> {
+  const chunker = new SemanticChunker();
+  const embedder = new Embedder();
+  const processor = new RulebookProcessor(supabaseAdmin, chunker, embedder);
+
+  try {
+    // 1. PDF 텍스트 추출
+    await processor.updateStatus(rulebookId, 'extracting');
+    const { text, pageCount } = await extractTextFromS3(s3Key);
+
+    // 페이지 수 업데이트
+    await supabaseAdmin
+      .from('rulebooks')
+      .update({ page_count: pageCount, updated_at: new Date().toISOString() })
+      .eq('id', rulebookId);
+
+    // 2. 청킹 → 임베딩 → 저장 (processor가 나머지 처리)
+    await processor.processRulebook(rulebookId, text);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : '처리 중 알 수 없는 오류';
+    console.error(`[규칙서 처리 실패] ${rulebookId}: ${message}`);
+    // processor.processRulebook 내부에서 이미 status를 'failed'로 변경하지만,
+    // extractTextFromS3에서 실패하면 여기서 직접 처리
+    await supabaseAdmin
+      .from('rulebooks')
+      .update({
+        status: 'error',
+        processing_status: 'failed',
+        processing_error: message,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', rulebookId);
+  }
+}
 
 export default router;

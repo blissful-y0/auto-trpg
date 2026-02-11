@@ -7,6 +7,7 @@ dist/
 .next/
 .turbo/
 out/
+*.tsbuildinfo
 
 # Environment variables
 .env
@@ -56,3 +57,4 @@ functions/*/.build/
 
 # Claude Code
 .claude/
+.serena/

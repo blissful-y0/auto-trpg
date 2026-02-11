@@ -104,6 +104,7 @@ export class OpenAIProvider implements LLMProvider {
       temperature: request.temperature ?? 0.7,
       messages,
       tools: tools.length > 0 ? tools : undefined,
+      tool_choice: tools.length > 0 && request.toolChoice === 'required' ? 'required' : undefined,
     });
 
     const choice = response.choices[0];
@@ -123,6 +124,23 @@ export class OpenAIProvider implements LLMProvider {
         totalTokens: response.usage?.total_tokens ?? 0,
       },
       finishReason: choice?.finish_reason ?? 'unknown',
+    };
+  }
+
+
+  async generateEmbedding(text: string, model?: string): Promise<{ embedding: number[]; usage: { promptTokens: number; completionTokens: number; totalTokens: number } }> {
+    const response = await this.client.embeddings.create({
+      model: model ?? 'text-embedding-3-small',
+      input: text,
+    });
+
+    return {
+      embedding: response.data[0].embedding,
+      usage: {
+        promptTokens: response.usage.prompt_tokens,
+        completionTokens: 0,
+        totalTokens: response.usage.total_tokens,
+      },
     };
   }
 

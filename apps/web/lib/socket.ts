@@ -7,7 +7,11 @@ const SOCKET_URL =
 interface ServerEvents {
   'gm:response': (payload: {
     sessionId: string;
-    response: { narrative: string; stateChanges?: unknown[] };
+    response: {
+      narrative: string;
+      stateChanges?: unknown[];
+      diceRequests?: Array<{ notation: string; purpose: string; dc?: number }>;
+    };
     timestamp: string;
   }) => void;
   'gm:stream': (payload: {
@@ -46,6 +50,31 @@ interface ServerEvents {
     combatState: unknown;
   }) => void;
   'error': (payload: { code: string; message: string }) => void;
+  // 세이브/로드 이벤트
+  'session:saveComplete': (payload: {
+    sessionId: string;
+    savePointId: string;
+    saveType: 'manual' | 'auto' | 'pause';
+    name: string;
+    createdAt: string;
+  }) => void;
+  'session:loadComplete': (payload: {
+    sessionId: string;
+    savePointId: string;
+    restored: boolean;
+  }) => void;
+  'session:paused': (payload: {
+    sessionId: string;
+    savePointId: string;
+  }) => void;
+  'session:resumed': (payload: {
+    sessionId: string;
+  }) => void;
+  'session:autoSaveIndicator': (payload: {
+    sessionId: string;
+    status: 'saving' | 'saved' | 'error';
+    timestamp?: string;
+  }) => void;
 }
 
 // 클라이언트 → 서버 이벤트 타입
@@ -79,6 +108,21 @@ interface ClientEvents {
     characterId: string;
     action: string;
     targetId?: string;
+  }) => void;
+  // 세이브/로드 이벤트
+  'session:save': (payload: {
+    sessionId: string;
+    name?: string;
+  }) => void;
+  'session:load': (payload: {
+    sessionId: string;
+    savePointId: string;
+  }) => void;
+  'session:pause': (payload: {
+    sessionId: string;
+  }) => void;
+  'session:resume': (payload: {
+    sessionId: string;
   }) => void;
 }
 

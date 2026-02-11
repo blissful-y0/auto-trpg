@@ -40,13 +40,16 @@ export const GM_TOOLS = [
         },
         diceRolls: {
           type: 'array',
-          description: 'GM이 요청하는 주사위 굴림',
+          description: 'GM이 플레이어에게 제안하는 주사위 판정. 실제 굴림은 플레이어가 수행합니다.',
           items: {
             type: 'object',
             properties: {
               notation: {
                 type: 'string',
-                description: '주사위 표기법 (예: "1d20+5")',
+                description:
+                  '주사위 표기법. 반드시 숫자 수정치만 사용 (예: "1d20+5", "2d6+3", "1d20-1"). ' +
+                  '변수명(religion_modifier, strength_bonus 등)은 사용 불가. ' +
+                  '능력치 수정치 = Math.floor((능력치 - 10) / 2). 예: WIS 14 → +2 → "1d20+2"',
               },
               purpose: {
                 type: 'string',
@@ -114,6 +117,14 @@ export interface GMResponse {
   diceRolls?: DiceRollRequest[];
   rulesApplied?: RuleReference[];
   sceneTransition?: SceneTransition | null;
+  // 토큰 사용량 (모니터링용 — LLM 호출 시에만 존재)
+  tokenUsage?: {
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+    model?: string;
+    provider?: string;
+  };
 }
 
 export interface StateChange {

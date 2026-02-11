@@ -11,6 +11,7 @@ import {
   Settings,
   LogOut,
   LayoutDashboard,
+  Scroll,
   Menu,
   X,
   Sun,
@@ -20,6 +21,7 @@ import { useState } from 'react';
 
 const navItems = [
   { href: '/dashboard', label: '대시보드', icon: LayoutDashboard },
+  { href: '/campaigns', label: '캠페인', icon: Scroll },
   { href: '/rulebooks', label: '규칙서', icon: BookOpen },
   { href: '/settings', label: '설정', icon: Settings },
 ];
