@@ -17,10 +17,10 @@ ALTER TABLE rulebooks RENAME COLUMN file_size_bytes TO file_size;
 ALTER TABLE rulebooks RENAME COLUMN error_message TO processing_error;
 
 -- ─── 2. 누락 컬럼 추가 ────────────────────────────────────
-ALTER TABLE rulebooks ADD COLUMN file_name TEXT;
-ALTER TABLE rulebooks ADD COLUMN processing_status TEXT DEFAULT 'pending';
-ALTER TABLE rulebooks ADD COLUMN processed_at TIMESTAMPTZ;
-ALTER TABLE rulebooks ADD COLUMN updated_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE rulebooks ADD COLUMN IF NOT EXISTS file_name TEXT;
+ALTER TABLE rulebooks ADD COLUMN IF NOT EXISTS processing_status TEXT DEFAULT 'pending';
+ALTER TABLE rulebooks ADD COLUMN IF NOT EXISTS processed_at TIMESTAMPTZ;
+-- updated_at은 002에서 이미 생성됨
 
 -- status 제약 조건 확장 (기존 + 처리 완료 상태)
 ALTER TABLE rulebooks DROP CONSTRAINT IF EXISTS rulebooks_status_check;
