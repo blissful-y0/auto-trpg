@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import { toast } from 'sonner';
 import { createClient } from '@/lib/supabase/client';
@@ -9,16 +9,17 @@ import { useGameSocket } from '@/lib/hooks/useGameSocket';
 import { useGameStore } from '@/lib/stores/gameStore';
 import { useChatStore } from '@/lib/stores/chatStore';
 import { sessionApi, chatApi, settingsApi, ApiError } from '@/lib/api';
-import { User, Dice5, Swords, BookOpen, Save, PanelRightClose, PanelRightOpen } from 'lucide-react';
+import { User, Dice5, Swords, BookOpen, Save, Coins, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import ChatPanel from './components/ChatPanel';
 import CharacterSheet from './components/CharacterSheet';
 import DiceRoller from './components/DiceRoller';
 import CombatTracker from './components/CombatTracker';
 import NarrativeLog from './components/NarrativeLog';
 import SaveLoadPanel from './components/SaveLoadPanel';
+import TokenCostPanel from './components/TokenCostPanel';
 import AutoSaveIndicator from './components/AutoSaveIndicator';
 
-type RightPanel = 'character' | 'dice' | 'combat' | 'narrative' | 'save';
+type RightPanel = 'character' | 'dice' | 'combat' | 'narrative' | 'save' | 'cost';
 
 type ProviderId = 'claude' | 'openai' | 'gemini';
 
@@ -39,7 +40,23 @@ const panelTabs: { key: RightPanel; label: string; icon: React.ElementType }[] =
   { key: 'combat', label: '전투', icon: Swords },
   { key: 'narrative', label: '이야기', icon: BookOpen },
   { key: 'save', label: '세이브', icon: Save },
+  { key: 'cost', label: '비용', icon: Coins },
 ];
+
+function mapDbMessage(msg: any, idx: number) {
+  return {
+    id:
+      msg.id ||
+      `hist-${msg.created_at || 'unknown'}-${msg.sender_id || msg.sender_type || 'unknown'}-${idx}`,
+    type: (msg.sender_type === 'gm' ? 'gm' : msg.sender_type === 'system' ? 'system' : msg.is_ooc ? 'ooc' : 'player') as 'gm' | 'system' | 'ooc' | 'player',
+    sender: msg.sender_type === 'gm' ? 'GM' : msg.sender_type === 'system' ? '시스템' : msg.sender_id || '플레이어',
+    content: msg.content,
+    timestamp: new Date(msg.created_at).toLocaleTimeString('ko-KR', {
+      hour: '2-digit',
+      minute: '2-digit',
+    }),
+  };
+}
 
 export default function GameSessionPage() {
   const params = useParams();
@@ -50,7 +67,10 @@ export default function GameSessionPage() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [readyForRealtime, setReadyForRealtime] = useState(false);
   const { session, setSession } = useGameStore();
-  const { addMessage, clearMessages } = useChatStore();
+  const { addMessage, prependMessages, clearMessages } = useChatStore();
+  const [hasMoreMessages, setHasMoreMessages] = useState(true);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const oldestTimestampRef = useRef<string | null>(null);
   const [availableModels, setAvailableModels] = useState<ProviderModel[]>([]);
   const [loadingModels, setLoadingModels] = useState(false);
   const [savingModel, setSavingModel] = useState(false);
@@ -105,19 +125,15 @@ export default function GameSessionPage() {
       if (cancelled) return;
 
       const messages = messagesRes?.data || [];
+      const PAGE_SIZE = 200;
+      setHasMoreMessages(messages.length >= PAGE_SIZE);
+
+      if (messages.length > 0) {
+        oldestTimestampRef.current = messages[0].created_at;
+      }
+
       messages.forEach((msg: any, idx: number) => {
-        addMessage({
-          id:
-            msg.id ||
-            `hist-${msg.created_at || 'unknown'}-${msg.sender_id || msg.sender_type || 'unknown'}-${idx}`,
-          type: msg.sender_type === 'gm' ? 'gm' : msg.is_ooc ? 'ooc' : 'player',
-          sender: msg.sender_type === 'gm' ? 'GM' : msg.sender_id || '플레이어',
-          content: msg.content,
-          timestamp: new Date(msg.created_at).toLocaleTimeString('ko-KR', {
-            hour: '2-digit',
-            minute: '2-digit',
-          }),
-        });
+        addMessage(mapDbMessage(msg, idx));
       });
 
       setReadyForRealtime(true);
@@ -136,6 +152,38 @@ export default function GameSessionPage() {
       setReadyForRealtime(false);
     };
   }, [token, sessionId, setSession, addMessage, clearMessages]);
+
+  const loadOlderMessages = useCallback(async () => {
+    if (!hasMoreMessages || loadingOlder || !oldestTimestampRef.current) return;
+
+    setLoadingOlder(true);
+    try {
+      const PAGE_SIZE = 50;
+      const res: any = await chatApi.getMessages(sessionId, {
+        before: oldestTimestampRef.current,
+        limit: PAGE_SIZE,
+      });
+      const older = res?.data || [];
+
+      if (older.length === 0) {
+        setHasMoreMessages(false);
+        return;
+      }
+
+      if (older.length < PAGE_SIZE) {
+        setHasMoreMessages(false);
+      }
+
+      oldestTimestampRef.current = older[0].created_at;
+      const mapped = older.map((msg: any, idx: number) => mapDbMessage(msg, idx));
+      prependMessages(mapped);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : '이전 메시지 로드 실패';
+      toast.error(message);
+    } finally {
+      setLoadingOlder(false);
+    }
+  }, [sessionId, hasMoreMessages, loadingOlder, prependMessages]);
 
   const [rightPanel, setRightPanel] = useState<RightPanel>('character');
   const [showRightPanel, setShowRightPanel] = useState(true);
@@ -213,7 +261,14 @@ export default function GameSessionPage() {
     <div className="flex h-full">
       {/* 왼쪽: 채팅 패널 */}
       <div className="flex-1 flex flex-col min-w-0">
-        <ChatPanel sessionId={sessionId} sessionName={sessionName} gameSystem={gameSystem} />
+        <ChatPanel
+          sessionId={sessionId}
+          sessionName={sessionName}
+          gameSystem={gameSystem}
+          onLoadOlder={loadOlderMessages}
+          hasMoreMessages={hasMoreMessages}
+          loadingOlder={loadingOlder}
+        />
       </div>
 
       {/* 오른쪽 패널 토글 버튼 */}
@@ -316,6 +371,7 @@ export default function GameSessionPage() {
                 sessionStatus={(session as any)?.status ?? 'waiting'}
               />
             )}
+            {rightPanel === 'cost' && <TokenCostPanel sessionId={sessionId} />}
           </div>
         </div>
       )}

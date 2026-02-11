@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useChatStore } from '@/lib/stores/chatStore';
 import { useSocketStore } from '@/lib/stores/socketStore';
 import { getSocket } from '@/lib/socket';
@@ -22,18 +22,58 @@ interface Props {
   sessionId: string;
   sessionName?: string;
   gameSystem?: string;
+  onLoadOlder?: () => Promise<void>;
+  hasMoreMessages?: boolean;
+  loadingOlder?: boolean;
 }
 
-export default function ChatPanel({ sessionId, sessionName, gameSystem }: Props) {
+export default function ChatPanel({ sessionId, sessionName, gameSystem, onLoadOlder, hasMoreMessages, loadingOlder }: Props) {
   const { messages, isStreaming, streamingContent } = useChatStore();
   const { status } = useSocketStore();
   const [input, setInput] = useState('');
   const [isOOC, setIsOOC] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const isLoadingOlderRef = useRef(false);
 
+  // 새 메시지 도착 시에만 스크롤 (이전 메시지 로드 시에는 유지)
   useEffect(() => {
+    if (isLoadingOlderRef.current) return;
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, streamingContent]);
+
+  // 이전 메시지 로드 후 스크롤 위치 복원
+  const handleLoadOlder = useCallback(async () => {
+    if (!onLoadOlder || !scrollContainerRef.current) return;
+
+    const container = scrollContainerRef.current;
+    const prevScrollHeight = container.scrollHeight;
+    isLoadingOlderRef.current = true;
+
+    await onLoadOlder();
+
+    // DOM 업데이트 후 스크롤 위치 복원
+    requestAnimationFrame(() => {
+      const newScrollHeight = container.scrollHeight;
+      container.scrollTop = newScrollHeight - prevScrollHeight;
+      isLoadingOlderRef.current = false;
+    });
+  }, [onLoadOlder]);
+
+  // 스크롤 최상단 감지
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container || !onLoadOlder) return;
+
+    const handleScroll = () => {
+      if (container.scrollTop < 100 && hasMoreMessages && !loadingOlder) {
+        void handleLoadOlder();
+      }
+    };
+
+    container.addEventListener('scroll', handleScroll);
+    return () => container.removeEventListener('scroll', handleScroll);
+  }, [onLoadOlder, hasMoreMessages, loadingOlder, handleLoadOlder]);
 
   const handleSend = (e: React.FormEvent) => {
     e.preventDefault();
@@ -129,7 +169,20 @@ export default function ChatPanel({ sessionId, sessionName, gameSystem }: Props)
       </div>
 
       {/* 메시지 목록 */}
-      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-1">
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-1">
+        {/* 이전 메시지 로드 인디케이터 */}
+        {loadingOlder && (
+          <div className="flex items-center justify-center gap-1.5 py-2">
+            <Loader2 size={14} className="animate-spin text-text-tertiary" />
+            <span className="text-xs text-text-tertiary">이전 메시지 불러오는 중...</span>
+          </div>
+        )}
+        {!hasMoreMessages && messages.length > 0 && (
+          <div className="text-center py-2">
+            <span className="text-xs text-text-tertiary">대화의 시작입니다</span>
+          </div>
+        )}
+
         {messages.length === 0 && !isStreaming && (
           <div className="flex flex-col items-center text-center py-16">
             <MessageCircle size={32} className="text-text-tertiary mb-3" />

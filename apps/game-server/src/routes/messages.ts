@@ -16,21 +16,22 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
     // 참가자 확인 (IDOR 방지: 참가자만 메시지 조회 가능)
     await assertSessionParticipant(sessionId as string, userId);
 
-    let limit = 50;
+    let limit = 200;
     if (req.query.limit) {
       const parsed = parseInt(req.query.limit as string, 10);
-      if (!Number.isInteger(parsed) || parsed < 1 || parsed > 100) {
-        throw new AppError(400, 'limit must be an integer between 1 and 100');
+      if (!Number.isInteger(parsed) || parsed < 1 || parsed > 500) {
+        throw new AppError(400, 'limit must be an integer between 1 and 500');
       }
       limit = parsed;
     }
     const before = req.query.before as string;
 
+    // 최신 N개를 가져온 뒤 시간순으로 정렬하여 반환
     let query = supabaseAdmin
       .from('messages')
       .select('*')
       .eq('session_id', sessionId)
-      .order('created_at', { ascending: true })
+      .order('created_at', { ascending: false })
       .limit(limit);
 
     if (before) {
@@ -43,7 +44,9 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
       throw new AppError(500, `메시지 조회 실패: ${error.message}`);
     }
 
-    res.json({ data: data || [] });
+    // 최신→오래된 순으로 가져왔으므로, 오래된→최신 순으로 뒤집어 반환
+    const sorted = (data || []).reverse();
+    res.json({ data: sorted });
   } catch (err) {
     next(err);
   }
