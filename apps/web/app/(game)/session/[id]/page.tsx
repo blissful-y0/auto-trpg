@@ -9,14 +9,16 @@ import { useGameSocket } from '@/lib/hooks/useGameSocket';
 import { useGameStore } from '@/lib/stores/gameStore';
 import { useChatStore } from '@/lib/stores/chatStore';
 import { sessionApi, chatApi, settingsApi, ApiError } from '@/lib/api';
-import { User, Dice5, Swords, BookOpen, PanelRightClose, PanelRightOpen } from 'lucide-react';
+import { User, Dice5, Swords, BookOpen, Save, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import ChatPanel from './components/ChatPanel';
 import CharacterSheet from './components/CharacterSheet';
 import DiceRoller from './components/DiceRoller';
 import CombatTracker from './components/CombatTracker';
 import NarrativeLog from './components/NarrativeLog';
+import SaveLoadPanel from './components/SaveLoadPanel';
+import AutoSaveIndicator from './components/AutoSaveIndicator';
 
-type RightPanel = 'character' | 'dice' | 'combat' | 'narrative';
+type RightPanel = 'character' | 'dice' | 'combat' | 'narrative' | 'save';
 
 type ProviderId = 'claude' | 'openai' | 'gemini';
 
@@ -36,6 +38,7 @@ const panelTabs: { key: RightPanel; label: string; icon: React.ElementType }[] =
   { key: 'dice', label: '주사위', icon: Dice5 },
   { key: 'combat', label: '전투', icon: Swords },
   { key: 'narrative', label: '이야기', icon: BookOpen },
+  { key: 'save', label: '세이브', icon: Save },
 ];
 
 export default function GameSessionPage() {
@@ -261,6 +264,10 @@ export default function GameSessionPage() {
             })}
           </div>
 
+          <div className="border-b border-line px-3 py-1.5 flex justify-end">
+            <AutoSaveIndicator />
+          </div>
+
           <div className="border-b border-line px-3 py-3 space-y-2">
             <div className="text-[11px] text-text-tertiary">
               현재 프로바이더: {providerLabel[primaryProvider]}
@@ -302,6 +309,13 @@ export default function GameSessionPage() {
             {rightPanel === 'dice' && <DiceRoller sessionId={sessionId} />}
             {rightPanel === 'combat' && <CombatTracker />}
             {rightPanel === 'narrative' && <NarrativeLog />}
+            {rightPanel === 'save' && (
+              <SaveLoadPanel
+                sessionId={sessionId}
+                isCreator={currentUserId != null && (session as any)?.created_by === currentUserId}
+                sessionStatus={(session as any)?.status ?? 'waiting'}
+              />
+            )}
           </div>
         </div>
       )}
