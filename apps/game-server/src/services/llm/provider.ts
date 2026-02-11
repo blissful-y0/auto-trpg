@@ -43,6 +43,8 @@ export interface LLMRequest {
   tools?: LLMToolDefinition[];
   /** 시스템 프롬프트 (별도 지정 시 messages의 system 역할과 합산) */
   systemPrompt?: string;
+  /** Tool 사용 강제 여부: 'required' = 반드시 tool 사용, 'auto' = LLM 판단 */
+  toolChoice?: 'auto' | 'required';
 }
 
 // ── 응답 ──

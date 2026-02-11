@@ -105,6 +105,7 @@ export class ClaudeProvider implements LLMProvider {
       system: systemPrompt,
       messages,
       tools,
+      tool_choice: request.toolChoice === 'required' ? { type: 'any' as const } : undefined,
     });
 
     const textContent = response.content

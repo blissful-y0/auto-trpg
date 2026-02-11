@@ -5,6 +5,7 @@
  */
 import {
   GoogleGenerativeAI,
+  FunctionCallingMode,
   type Content,
   type FunctionDeclarationSchema,
   type FunctionDeclarationSchemaProperty,
@@ -209,10 +210,15 @@ export class GeminiProvider implements LLMProvider {
       };
     });
 
+    const toolConfig = request.toolChoice === 'required' && functionDeclarations.length > 0
+      ? { functionCallingConfig: { mode: FunctionCallingMode.ANY } }
+      : undefined;
+
     const model = this.client.getGenerativeModel({
       model: modelName,
       systemInstruction: this.extractSystemPrompt(request),
       tools: functionDeclarations.length > 0 ? [{ functionDeclarations }] : undefined,
+      toolConfig,
     });
 
     const contents = this.convertMessages(request);

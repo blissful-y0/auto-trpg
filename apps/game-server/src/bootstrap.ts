@@ -101,6 +101,7 @@ export async function createGameEngineForSession(
             model,
             maxTokens: 4096,
             temperature: 0.8,
+            toolChoice: 'required',
           });
 
           // Tool Use 응답 → GMResponse 변환
@@ -115,8 +116,26 @@ export async function createGameEngineForSession(
             };
           }
 
-          // Tool Use가 없는 경우: content를 내러티브로 사용
-          return { narrative: response.content || '[GM 응답 없음]' };
+          // Tool Use가 없는 경우: content에서 JSON 파싱 시도
+          const content = response.content || '';
+          if (content.trim().startsWith('{')) {
+            try {
+              const jsonStr = content.replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();
+              const parsed = JSON.parse(jsonStr) as Record<string, unknown>;
+              if (typeof parsed.narrative === 'string') {
+                return {
+                  narrative: parsed.narrative,
+                  stateChanges: parsed.stateChanges as GMResponse['stateChanges'],
+                  diceRolls: parsed.diceRolls as GMResponse['diceRolls'],
+                  rulesApplied: parsed.rulesApplied as GMResponse['rulesApplied'],
+                  sceneTransition: parsed.sceneTransition as GMResponse['sceneTransition'],
+                };
+              }
+            } catch {
+              // JSON 파싱 실패 시 content를 그대로 내러티브로 사용
+            }
+          }
+          return { narrative: content || '[GM 응답 없음]' };
         },
       };
     }
