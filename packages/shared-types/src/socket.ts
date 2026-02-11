@@ -63,6 +63,28 @@ export interface CombatActionPayload {
   targetId?: string;
 }
 
+/** 세이브 요청 페이로드 */
+export interface SessionSavePayload {
+  sessionId: GameSessionId;
+  name?: string;
+}
+
+/** 로드 요청 페이로드 */
+export interface SessionLoadPayload {
+  sessionId: GameSessionId;
+  savePointId: string;
+}
+
+/** 일시정지 요청 페이로드 */
+export interface SessionPausePayload {
+  sessionId: GameSessionId;
+}
+
+/** 재개 요청 페이로드 */
+export interface SessionResumePayload {
+  sessionId: GameSessionId;
+}
+
 /** 클라이언트 이벤트 맵 (이벤트명 → 페이로드 타입) */
 export interface ClientEvents {
   'player:action': PlayerActionPayload;
@@ -72,6 +94,10 @@ export interface ClientEvents {
   'chat:message': ChatMessagePayload;
   'game:start': GameStartPayload;
   'combat:action': CombatActionPayload;
+  'session:save': SessionSavePayload;
+  'session:load': SessionLoadPayload;
+  'session:pause': SessionPausePayload;
+  'session:resume': SessionResumePayload;
 }
 
 // ─── 서버 → 클라이언트 이벤트 ───────────────────────────
@@ -142,6 +168,44 @@ export interface ErrorPayload {
   message: string;
 }
 
+/** 세이브 완료 페이로드 */
+export interface SaveCompletePayload {
+  sessionId: GameSessionId;
+  savePointId: string;
+  saveType: 'manual' | 'auto' | 'pause';
+  name: string;
+  timestamp: string;
+}
+
+/** 로드 완료 페이로드 */
+export interface LoadCompletePayload {
+  sessionId: GameSessionId;
+  savePointId: string;
+  snapshot: unknown;
+}
+
+/** 일시정지 완료 페이로드 */
+export interface SessionPausedPayload {
+  sessionId: GameSessionId;
+  savePointId: string;
+  pausedBy: string;
+  timestamp: string;
+}
+
+/** 재개 완료 페이로드 */
+export interface SessionResumedPayload {
+  sessionId: GameSessionId;
+  resumedBy: string;
+  timestamp: string;
+}
+
+/** 자동 세이브 인디케이터 페이로드 */
+export interface AutoSaveIndicatorPayload {
+  sessionId: GameSessionId;
+  status: 'saving' | 'saved' | 'error';
+  timestamp: string;
+}
+
 /** 서버 이벤트 맵 (이벤트명 → 페이로드 타입) */
 export interface ServerEvents {
   'gm:response': GMResponsePayload;
@@ -151,5 +215,10 @@ export interface ServerEvents {
   'player:left': PlayerLeftPayload;
   'dice:result': DiceResultPayload;
   'combat:update': CombatUpdatePayload;
+  'session:saveComplete': SaveCompletePayload;
+  'session:loadComplete': LoadCompletePayload;
+  'session:paused': SessionPausedPayload;
+  'session:resumed': SessionResumedPayload;
+  'session:autoSaveIndicator': AutoSaveIndicatorPayload;
   'error': ErrorPayload;
 }

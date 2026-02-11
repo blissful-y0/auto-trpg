@@ -4,11 +4,13 @@ import { useEffect } from 'react';
 import { getSocket } from '../socket';
 import { useChatStore } from '../stores/chatStore';
 import { useGameStore } from '../stores/gameStore';
+import { useSaveStore } from '../stores/saveStore';
 
 // 게임 이벤트 소켓 바인딩 훅
 export function useGameSocket(sessionId: string, enabled = true) {
   const { addMessage, startStreaming, appendStreamContent, endStreaming } = useChatStore();
   const { startCombat, endCombat } = useGameStore();
+  const { setAutoSaveStatus, addSavePoint } = useSaveStore();
 
   useEffect(() => {
     if (!enabled) return;
@@ -145,6 +147,80 @@ export function useGameSocket(sessionId: string, enabled = true) {
       }
     };
 
+    // 세이브 완료 수신
+    const handleSaveComplete = (payload: {
+      sessionId: string;
+      savePointId: string;
+      saveType: 'manual' | 'auto' | 'pause';
+      name: string;
+      createdAt: string;
+    }) => {
+      if (payload.sessionId !== sessionId) return;
+
+      addSavePoint({
+        id: payload.savePointId,
+        saveType: payload.saveType,
+        name: payload.name,
+        sceneNumber: 0,
+        characterCount: 0,
+        createdBy: '',
+        createdAt: payload.createdAt,
+      });
+    };
+
+    // 로드 완료 수신 — 페이지 새로고침으로 상태 복원
+    const handleLoadComplete = (payload: {
+      sessionId: string;
+      savePointId: string;
+      restored: boolean;
+    }) => {
+      if (payload.sessionId !== sessionId) return;
+      if (payload.restored) {
+        window.location.reload();
+      }
+    };
+
+    // 세션 일시정지 수신
+    const handleSessionPaused = (payload: { sessionId: string }) => {
+      if (payload.sessionId !== sessionId) return;
+
+      addMessage({
+        id: `sys-pause-${Date.now()}`,
+        type: 'system',
+        sender: '시스템',
+        content: '세션이 일시정지되었습니다.',
+        timestamp: new Date().toLocaleTimeString('ko-KR', {
+          hour: '2-digit',
+          minute: '2-digit',
+        }),
+      });
+    };
+
+    // 세션 재개 수신
+    const handleSessionResumed = (payload: { sessionId: string }) => {
+      if (payload.sessionId !== sessionId) return;
+
+      addMessage({
+        id: `sys-resume-${Date.now()}`,
+        type: 'system',
+        sender: '시스템',
+        content: '세션이 재개되었습니다.',
+        timestamp: new Date().toLocaleTimeString('ko-KR', {
+          hour: '2-digit',
+          minute: '2-digit',
+        }),
+      });
+    };
+
+    // 자동 세이브 인디케이터 수신
+    const handleAutoSaveIndicator = (payload: {
+      sessionId: string;
+      status: 'saving' | 'saved' | 'error';
+    }) => {
+      if (payload.sessionId !== sessionId) return;
+      setAutoSaveStatus(payload.status);
+    };
+
     // 에러 수신
     const handleError = (payload: { code: string; message: string }) => {
       console.error(`소켓 에러 [${payload.code}]:`, payload.message);
@@ -168,6 +244,11 @@ export function useGameSocket(sessionId: string, enabled = true) {
     socket.on('dice:result', handleDiceResult);
     socket.on('combat:update', handleCombatUpdate);
     socket.on('error', handleError);
+    socket.on('session:saveComplete', handleSaveComplete);
+    socket.on('session:loadComplete', handleLoadComplete);
+    socket.on('session:paused', handleSessionPaused);
+    socket.on('session:resumed', handleSessionResumed);
+    socket.on('session:autoSaveIndicator', handleAutoSaveIndicator);
 
     return () => {
       socket.off('gm:response', handleGmResponse);
@@ -177,6 +258,11 @@ export function useGameSocket(sessionId: string, enabled = true) {
       socket.off('dice:result', handleDiceResult);
       socket.off('combat:update', handleCombatUpdate);
       socket.off('error', handleError);
+      socket.off('session:saveComplete', handleSaveComplete);
+      socket.off('session:loadComplete', handleLoadComplete);
+      socket.off('session:paused', handleSessionPaused);
+      socket.off('session:resumed', handleSessionResumed);
+      socket.off('session:autoSaveIndicator', handleAutoSaveIndicator);
     };
   }, [
     enabled,
@@ -187,5 +273,7 @@ export function useGameSocket(sessionId: string, enabled = true) {
     endStreaming,
     startCombat,
     endCombat,
+    setAutoSaveStatus,
+    addSavePoint,
   ]);
 }

@@ -12,6 +12,10 @@ import type {
   ChatMessagePayload,
   GameStartPayload,
   CombatActionPayload,
+  SessionSavePayload,
+  SessionLoadPayload,
+  SessionPausePayload,
+  SessionResumePayload,
 } from './types';
 import type { RoomManager } from './RoomManager';
 import type { ActionQueue } from './ActionQueue';
@@ -19,6 +23,8 @@ import { createGameEngineForSession } from '../bootstrap';
 import { supabaseAdmin } from '../lib/supabase';
 import type { GMResponse } from '../services/game/gmTools';
 import type { GameSessionInfo, CharacterInfo } from '../services/context/ContextManager';
+import type { SaveManager } from '../services/redis/SaveManager';
+import type { PersistenceManager } from '../services/redis/PersistenceManager';
 
 type TypedServer = Server<ClientEvents, ServerEvents, Record<string, never>, SocketData>;
 type TypedSocket = Socket<ClientEvents, ServerEvents, Record<string, never>, SocketData>;
@@ -146,6 +152,8 @@ export function registerHandlers(
   socket: TypedSocket,
   roomManager: RoomManager,
   actionQueue: ActionQueue,
+  saveManager?: SaveManager,
+  persistenceManager?: PersistenceManager,
 ): void {
   const user = socket.data.user;
 
@@ -466,6 +474,159 @@ export function registerHandlers(
       socket.emit('error', {
         code: 'COMBAT_ERROR',
         message: err instanceof Error ? err.message : '전투 액션 처리 중 오류가 발생했습니다.',
+      });
+    }
+  });
+
+  // ─── 세이브/로드/일시정지/재개 이벤트 ──────────────────
+
+  // session:save — 수동 세이브
+  socket.on('session:save', async (payload: SessionSavePayload) => {
+    try {
+      const { sessionId, name } = payload;
+
+      const authorized = await requireSessionMembership(sessionId, user.userId, roomManager);
+      if (!authorized) {
+        socket.emit('error', {
+          code: 'FORBIDDEN',
+          message: '이 세션에서 세이브할 권한이 없습니다.',
+        });
+        return;
+      }
+
+      if (!saveManager) {
+        socket.emit('error', { code: 'SAVE_ERROR', message: '세이브 기능이 비활성화되어 있습니다.' });
+        return;
+      }
+
+      const result = await saveManager.save(sessionId, user.userId, name);
+
+      io.to(sessionId).emit('session:saveComplete', {
+        sessionId,
+        savePointId: result.id,
+        saveType: 'manual' as const,
+        name: result.name,
+        timestamp: result.createdAt,
+      });
+    } catch (err) {
+      socket.emit('error', {
+        code: 'SAVE_ERROR',
+        message: err instanceof Error ? err.message : '세이브 중 오류가 발생했습니다.',
+      });
+    }
+  });
+
+  // session:load — 세이브 로드
+  socket.on('session:load', async (payload: SessionLoadPayload) => {
+    try {
+      const { sessionId, savePointId } = payload;
+
+      const authorized = await requireSessionMembership(sessionId, user.userId, roomManager);
+      if (!authorized) {
+        socket.emit('error', {
+          code: 'FORBIDDEN',
+          message: '이 세션에서 로드할 권한이 없습니다.',
+        });
+        return;
+      }
+
+      if (!saveManager) {
+        socket.emit('error', { code: 'LOAD_ERROR', message: '로드 기능이 비활성화되어 있습니다.' });
+        return;
+      }
+
+      const snapshot = await saveManager.load(sessionId, savePointId);
+
+      io.to(sessionId).emit('session:loadComplete', {
+        sessionId,
+        savePointId,
+        snapshot,
+      });
+    } catch (err) {
+      socket.emit('error', {
+        code: 'LOAD_ERROR',
+        message: err instanceof Error ? err.message : '로드 중 오류가 발생했습니다.',
+      });
+    }
+  });
+
+  // session:pause — 일시정지
+  socket.on('session:pause', async (payload: SessionPausePayload) => {
+    try {
+      const { sessionId } = payload;
+
+      const isCreator = await isSessionCreator(sessionId, user.userId);
+      if (!isCreator) {
+        socket.emit('error', {
+          code: 'FORBIDDEN',
+          message: '세션 생성자만 일시정지할 수 있습니다.',
+        });
+        return;
+      }
+
+      if (!saveManager || !persistenceManager) {
+        socket.emit('error', { code: 'PAUSE_ERROR', message: '일시정지 기능이 비활성화되어 있습니다.' });
+        return;
+      }
+
+      const saveResult = await saveManager.savePause(sessionId, user.userId);
+
+      await supabaseAdmin
+        .from('game_sessions')
+        .update({ status: 'paused', updated_at: new Date().toISOString() })
+        .eq('id', sessionId);
+
+      await persistenceManager.flushSession(sessionId);
+
+      io.to(sessionId).emit('session:paused', {
+        sessionId,
+        savePointId: saveResult.id,
+        pausedBy: user.userId,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err) {
+      socket.emit('error', {
+        code: 'PAUSE_ERROR',
+        message: err instanceof Error ? err.message : '일시정지 중 오류가 발생했습니다.',
+      });
+    }
+  });
+
+  // session:resume — 재개
+  socket.on('session:resume', async (payload: SessionResumePayload) => {
+    try {
+      const { sessionId } = payload;
+
+      const isCreator = await isSessionCreator(sessionId, user.userId);
+      if (!isCreator) {
+        socket.emit('error', {
+          code: 'FORBIDDEN',
+          message: '세션 생성자만 재개할 수 있습니다.',
+        });
+        return;
+      }
+
+      if (!persistenceManager) {
+        socket.emit('error', { code: 'RESUME_ERROR', message: '재개 기능이 비활성화되어 있습니다.' });
+        return;
+      }
+
+      await supabaseAdmin
+        .from('game_sessions')
+        .update({ status: 'active', updated_at: new Date().toISOString() })
+        .eq('id', sessionId);
+
+      await persistenceManager.loadSession(sessionId);
+
+      io.to(sessionId).emit('session:resumed', {
+        sessionId,
+        resumedBy: user.userId,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err) {
+      socket.emit('error', {
+        code: 'RESUME_ERROR',
+        message: err instanceof Error ? err.message : '재개 중 오류가 발생했습니다.',
       });
     }
   });

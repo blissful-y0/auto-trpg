@@ -3,6 +3,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { supabaseAdmin } from '../../lib/supabase';
 import { SessionStateStore } from './SessionStateStore';
+import { SaveManager } from './SaveManager';
 import { PERSIST_INTERVAL, type SessionState, type CharacterState, type DirtyState } from './types';
 
 export class PersistenceManager {
@@ -10,10 +11,12 @@ export class PersistenceManager {
   private supabase: SupabaseClient;
   private dirtyMap: Map<string, DirtyState> = new Map();
   private timers: Map<string, ReturnType<typeof setInterval>> = new Map();
+  private saveManager: SaveManager | null;
 
-  constructor(store?: SessionStateStore, supabase?: SupabaseClient) {
+  constructor(store?: SessionStateStore, supabase?: SupabaseClient, saveManager?: SaveManager) {
     this.store = store ?? new SessionStateStore();
     this.supabase = supabase ?? supabaseAdmin;
+    this.saveManager = saveManager ?? null;
   }
 
   // ─── 세션 시작: Supabase → Redis 로드 ─────────────
@@ -83,6 +86,11 @@ export class PersistenceManager {
 
     // 주기적 영속화 타이머 시작
     this.startPersistTimer(sessionId);
+
+    // 자동 세이브 시작
+    if (this.saveManager) {
+      this.saveManager.startAutoSave(sessionId, session.created_by);
+    }
 
     console.log(`[PersistenceManager] 세션 ${sessionId} 로드 완료`);
   }
@@ -187,6 +195,11 @@ export class PersistenceManager {
   // ─── 세션 종료: Redis → Supabase flush ─────────────
 
   async flushSession(sessionId: string): Promise<void> {
+    // 자동 세이브 중지
+    if (this.saveManager) {
+      this.saveManager.stopAutoSave(sessionId);
+    }
+
     // 모든 dirty 플래그를 true로 설정하여 전체 영속화
     const dirty = this.dirtyMap.get(sessionId);
     if (dirty) {
@@ -233,6 +246,11 @@ export class PersistenceManager {
     }
     this.timers.clear();
     this.dirtyMap.clear();
+
+    // SaveManager 종료
+    if (this.saveManager) {
+      await this.saveManager.shutdownAll();
+    }
 
     console.log('[PersistenceManager] 전체 종료 완료');
   }

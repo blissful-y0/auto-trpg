@@ -8,12 +8,23 @@ import { RoomManager } from './RoomManager';
 import { ActionQueue } from './ActionQueue';
 import { registerHandlers } from './EventHandlers';
 import type { ClientEvents, ServerEvents, SocketData } from './types';
+import type { SaveManager } from '../services/redis/SaveManager';
+import type { PersistenceManager } from '../services/redis/PersistenceManager';
 
 // 공유 인스턴스
 const roomManager = new RoomManager();
 const actionQueue = new ActionQueue();
 
 export type TypedSocketServer = Server<ClientEvents, ServerEvents, Record<string, never>, SocketData>;
+
+// 외부에서 주입되는 서비스 인스턴스
+let _saveManager: SaveManager | undefined;
+let _persistenceManager: PersistenceManager | undefined;
+
+export function setSocketServices(sm: SaveManager, pm: PersistenceManager): void {
+  _saveManager = sm;
+  _persistenceManager = pm;
+}
 
 // Socket.io 서버 생성
 export function createSocketServer(httpServer: HTTPServer): TypedSocketServer {
@@ -60,7 +71,7 @@ export function createSocketServer(httpServer: HTTPServer): TypedSocketServer {
     console.log(`소켓 연결: ${socket.id} (사용자: ${socket.data.user.userId})`);
 
     // 이벤트 핸들러 등록
-    registerHandlers(io, socket, roomManager, actionQueue);
+    registerHandlers(io, socket, roomManager, actionQueue, _saveManager, _persistenceManager);
 
     socket.on('disconnect', (reason) => {
       console.log(`소켓 연결 종료: ${socket.id} (이유: ${reason})`);

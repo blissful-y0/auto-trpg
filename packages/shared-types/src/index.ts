@@ -5,3 +5,4 @@ export * from './game';
 export * from './llm';
 export * from './socket';
 export * from './context';
+export * from './campaign';
