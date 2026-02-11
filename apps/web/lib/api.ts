@@ -105,29 +105,54 @@ export const chatApi = {
 // 규칙서 API
 export const rulebookApi = {
   list: () => fetchApi<{ data: unknown[] }>('/api/rulebooks'),
-  upload: async (file: File) => {
-    const formData = new FormData();
-    formData.append('file', file);
+  get: (id: string) =>
+    fetchApi<{ data: unknown & { chunkCount: number } }>(`/api/rulebooks/${id}`),
 
-    const token = await getAccessToken();
-    if (!token) {
-      throw new Error('로그인이 필요합니다.');
+  /** 3단계 업로드: 메타등록 → S3 업로드 → 처리 시작 */
+  upload: async (
+    file: File,
+    title: string,
+    gameSystem?: string,
+    onProgress?: (step: 'registering' | 'uploading' | 'processing') => void,
+  ): Promise<{ rulebookId: string }> => {
+    // Step 1: 메타데이터 등록 + presigned URL 획득
+    onProgress?.('registering');
+    const { data } = await fetchApi<{
+      data: { rulebook: { id: string }; uploadUrl: string };
+    }>('/api/rulebooks/upload', {
+      method: 'POST',
+      body: {
+        fileName: file.name,
+        fileType: file.type,
+        fileSize: file.size,
+        title,
+        gameSystem: gameSystem || undefined,
+      },
+    });
+
+    // Step 2: S3에 직접 업로드
+    onProgress?.('uploading');
+    const uploadRes = await fetch(data.uploadUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': file.type },
+      body: file,
+    });
+
+    if (!uploadRes.ok) {
+      throw new Error('파일 업로드에 실패했습니다');
     }
 
-    let res: Response;
-    try {
-      res = await fetch(`${API_BASE_URL}/api/rulebooks/upload`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-        body: formData,
-      });
-    } catch {
-      throw new Error('서버에 연결할 수 없습니다.');
-    }
+    // Step 3: 처리 시작
+    onProgress?.('processing');
+    await fetchApi(`/api/rulebooks/${data.rulebook.id}/process`, {
+      method: 'POST',
+    });
 
-    if (!res.ok) throw new Error('업로드 실패');
-    return res.json();
+    return { rulebookId: data.rulebook.id };
   },
+
+  delete: (id: string) =>
+    fetchApi<{ message: string }>(`/api/rulebooks/${id}`, { method: 'DELETE' }),
 };
 
 // 설정 API — 백엔드 경로: /api/keys
