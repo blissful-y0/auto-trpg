@@ -16,12 +16,14 @@ import type {
   SessionLoadPayload,
   SessionPausePayload,
   SessionResumePayload,
+  SessionCostReportPayload,
 } from './types';
 import type { RoomManager } from './RoomManager';
 import type { ActionQueue } from './ActionQueue';
 import { createGameEngineForSession } from '../bootstrap';
 import { supabaseAdmin } from '../lib/supabase';
 import type { GMResponse } from '../services/game/gmTools';
+import { getSessionCostReport } from '../services/llm/tokenCost';
 import type { GameSessionInfo, CharacterInfo } from '../services/context/ContextManager';
 import type { SaveManager } from '../services/redis/SaveManager';
 import type { PersistenceManager } from '../services/redis/PersistenceManager';
@@ -290,6 +292,27 @@ export function registerHandlers(
           .then(({ error: dbErr }: { error: { message: string } | null }) => {
             if (dbErr) console.error('GM 메시지 저장 실패:', dbErr.message);
           });
+
+        // 토큰 사용량 기록
+        if (response.tokenUsage) {
+          void supabaseAdmin
+            .from('game_events')
+            .insert({
+              session_id: sessionId,
+              event_type: 'token_usage',
+              actor_id: user.userId,
+              data: {
+                promptTokens: response.tokenUsage.promptTokens,
+                completionTokens: response.tokenUsage.completionTokens,
+                totalTokens: response.tokenUsage.totalTokens,
+                model: response.tokenUsage.model,
+                provider: response.tokenUsage.provider,
+              },
+            })
+            .then(({ error: dbErr }: { error: { message: string } | null }) => {
+              if (dbErr) console.error('토큰 사용량 기록 실패:', dbErr.message);
+            });
+        }
       })
       .catch((err) => {
         socket.emit('error', {
@@ -455,6 +478,27 @@ export function registerHandlers(
               .then(({ error: dbErr }: { error: { message: string } | null }) => {
                 if (dbErr) console.error('GM 메시지 저장 실패:', dbErr.message);
               });
+
+            // 토큰 사용량 기록
+            if (response.tokenUsage) {
+              void supabaseAdmin
+                .from('game_events')
+                .insert({
+                  session_id: sessionId,
+                  event_type: 'token_usage',
+                  actor_id: user.userId,
+                  data: {
+                    promptTokens: response.tokenUsage.promptTokens,
+                    completionTokens: response.tokenUsage.completionTokens,
+                    totalTokens: response.tokenUsage.totalTokens,
+                    model: response.tokenUsage.model,
+                    provider: response.tokenUsage.provider,
+                  },
+                })
+                .then(({ error: dbErr }: { error: { message: string } | null }) => {
+                  if (dbErr) console.error('토큰 사용량 기록 실패:', dbErr.message);
+                });
+            }
           })
           .catch((err) => {
             socket.emit('error', {
@@ -703,6 +747,41 @@ export function registerHandlers(
       socket.emit('error', {
         code: 'RESUME_ERROR',
         message: err instanceof Error ? err.message : '재개 중 오류가 발생했습니다.',
+      });
+    }
+  });
+
+  // session:costReport — 세션별 토큰 비용 리포트
+  socket.on('session:costReport', async (payload: SessionCostReportPayload) => {
+    try {
+      const { sessionId } = payload;
+
+      const authorized = await requireSessionMembership(sessionId, user.userId, roomManager);
+      if (!authorized) {
+        socket.emit('error', { code: 'FORBIDDEN', message: '이 세션의 리포트를 조회할 권한이 없습니다.' });
+        return;
+      }
+
+      const report = await getSessionCostReport(supabaseAdmin, sessionId);
+
+      socket.emit('session:costReportResult', {
+        sessionId: report.sessionId,
+        totalCalls: report.totalCalls,
+        totalTokens: report.totalTokens,
+        estimatedCostUSD: report.estimatedCostUSD,
+        estimatedCostKRW: report.estimatedCostKRW,
+        byModel: report.byModel.map((m) => ({
+          model: m.model,
+          provider: m.provider,
+          callCount: m.callCount,
+          totalTokens: m.totalTokens,
+          estimatedCostUSD: m.estimatedCostUSD,
+        })),
+      });
+    } catch (err) {
+      socket.emit('error', {
+        code: 'COST_REPORT_ERROR',
+        message: err instanceof Error ? err.message : '비용 리포트 조회 중 오류가 발생했습니다.',
       });
     }
   });

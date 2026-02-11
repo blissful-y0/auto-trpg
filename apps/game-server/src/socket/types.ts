@@ -91,6 +91,10 @@ export interface SessionResumePayload {
   sessionId: string;
 }
 
+export interface SessionCostReportPayload {
+  sessionId: string;
+}
+
 // 클라이언트 이벤트 맵
 export interface ClientEvents {
   'player:action': (payload: PlayerActionPayload) => void;
@@ -104,6 +108,7 @@ export interface ClientEvents {
   'session:load': (payload: SessionLoadPayload) => void;
   'session:pause': (payload: SessionPausePayload) => void;
   'session:resume': (payload: SessionResumePayload) => void;
+  'session:costReport': (payload: SessionCostReportPayload) => void;
 }
 
 // 서버 → 클라이언트 이벤트 페이로드
@@ -212,7 +217,23 @@ export interface ServerEvents {
   'session:paused': (payload: SessionPausedPayload) => void;
   'session:resumed': (payload: SessionResumedPayload) => void;
   'session:autoSaveIndicator': (payload: AutoSaveIndicatorPayload) => void;
+  'session:costReportResult': (payload: SessionCostReportResultPayload) => void;
   'error': (payload: ErrorPayload) => void;
+}
+
+export interface SessionCostReportResultPayload {
+  sessionId: string;
+  totalCalls: number;
+  totalTokens: number;
+  estimatedCostUSD: number;
+  estimatedCostKRW: number;
+  byModel: Array<{
+    model: string;
+    provider: string;
+    callCount: number;
+    totalTokens: number;
+    estimatedCostUSD: number;
+  }>;
 }
 
 // 소켓 데이터 (socket.data에 저장)

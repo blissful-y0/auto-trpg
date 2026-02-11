@@ -23,6 +23,9 @@ export interface PostResponseParams {
   recentMessages?: Array<{ role: string; content: string }>;
 }
 
+// 임베딩 생성 함수 타입
+export type EmbeddingGenerator = (text: string) => Promise<{ embedding: number[] }>;
+
 export class MemoryHierarchy {
   constructor(
     private budgetAllocator: BudgetAllocator,
@@ -30,16 +33,17 @@ export class MemoryHierarchy {
     private stateTracker: StateTracker,
     private sceneDetector: SceneDetector,
     private memoryRetriever: MemoryRetriever,
+    private embeddingGenerator?: EmbeddingGenerator,
   ) {}
 
   // 계층화된 컨텍스트 생성
-  buildTieredContext(
+  async buildTieredContext(
     profile: BudgetProfile,
     tier0Content: string[],
     tier1Content: string[],
     queryEmbedding?: number[],
     sessionId?: string,
-  ): TieredContext {
+  ): Promise<TieredContext> {
     const budget = this.budgetAllocator.allocate(profile);
 
     // Tier 0/1은 호출자가 제공
@@ -49,7 +53,7 @@ export class MemoryHierarchy {
     // Tier 2: 장면 요약 검색
     let tier2: string[] = [];
     if (queryEmbedding && sessionId) {
-      const sceneResults = this.memoryRetriever.searchSceneSummaries(
+      const sceneResults = await this.memoryRetriever.searchSceneSummaries(
         queryEmbedding,
         sessionId,
       );
@@ -62,7 +66,7 @@ export class MemoryHierarchy {
     // Tier 3: 세션 요약 검색
     let tier3: string[] = [];
     if (queryEmbedding && sessionId) {
-      const sessionResults = this.memoryRetriever.searchSessionSummaries(
+      const sessionResults = await this.memoryRetriever.searchSessionSummaries(
         queryEmbedding,
         sessionId,
       );
@@ -111,11 +115,22 @@ export class MemoryHierarchy {
         trigger: 'scene_change',
       });
 
-      // 임베딩 없이 인메모리 저장 (추후 임베딩 연동 시 벡터 추가)
-      this.memoryRetriever.addSceneSummary(
+      // 임베딩 생성 (가능한 경우)
+      let embedding: number[] = [];
+      if (this.embeddingGenerator) {
+        try {
+          const embResult = await this.embeddingGenerator(result.summary);
+          embedding = embResult.embedding;
+        } catch (err) {
+          console.error('[MemoryHierarchy] 임베딩 생성 실패:', err);
+        }
+      }
+
+      // DB + 인메모리 저장
+      await this.memoryRetriever.addSceneSummary(
         sessionId,
         result.summary,
-        [], // 임베딩은 추후 연동
+        embedding,
         { keyEvents: result.keyEvents, trigger: detection.trigger },
       );
     }

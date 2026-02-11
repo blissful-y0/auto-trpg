@@ -108,6 +108,9 @@ export interface LLMProvider {
   /** Tool Use (구조화 출력) */
   generateWithTools(request: LLMRequest): Promise<LLMToolResponse>;
 
+  /** 임베딩 생성 (optional — embedding 태스크를 지원하는 프로바이더만 구현) */
+  generateEmbedding?(text: string, model?: string): Promise<{ embedding: number[]; usage: TokenUsage }>;
+
   /** 토큰 카운팅 (근사치) */
   countTokens(text: string): number;
 
