@@ -104,6 +104,7 @@ export class OpenAIProvider implements LLMProvider {
       temperature: request.temperature ?? 0.7,
       messages,
       tools: tools.length > 0 ? tools : undefined,
+      tool_choice: tools.length > 0 && request.toolChoice === 'required' ? 'required' : undefined,
     });
 
     const choice = response.choices[0];
