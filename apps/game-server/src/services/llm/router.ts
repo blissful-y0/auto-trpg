@@ -32,6 +32,11 @@ const DEFAULT_ROUTING: Record<TaskType, ModelRouting[]> = {
     { providerId: 'claude', model: 'claude-haiku-3-5-20241022', priority: 3 },
   ],
   embedding: [{ providerId: 'openai', model: 'text-embedding-3-small', priority: 1 }],
+  rerank: [
+    { providerId: 'claude', model: 'claude-haiku-3-5-20241022', priority: 1 },
+    { providerId: 'gemini', model: 'gemini-2.0-flash', priority: 2 },
+    { providerId: 'openai', model: 'gpt-4o-mini', priority: 3 },
+  ],
 };
 
 /** 프로바이더별 팩토리 */
