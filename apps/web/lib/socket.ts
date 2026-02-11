@@ -75,6 +75,20 @@ interface ServerEvents {
     status: 'saving' | 'saved' | 'error';
     timestamp?: string;
   }) => void;
+  'session:costReportResult': (payload: {
+    sessionId: string;
+    totalCalls: number;
+    totalTokens: number;
+    estimatedCostUSD: number;
+    estimatedCostKRW: number;
+    byModel: Array<{
+      model: string;
+      provider: string;
+      callCount: number;
+      totalTokens: number;
+      estimatedCostUSD: number;
+    }>;
+  }) => void;
 }
 
 // 클라이언트 → 서버 이벤트 타입
@@ -122,6 +136,9 @@ interface ClientEvents {
     sessionId: string;
   }) => void;
   'session:resume': (payload: {
+    sessionId: string;
+  }) => void;
+  'session:costReport': (payload: {
     sessionId: string;
   }) => void;
 }

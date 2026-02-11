@@ -9,16 +9,17 @@ import { useGameSocket } from '@/lib/hooks/useGameSocket';
 import { useGameStore } from '@/lib/stores/gameStore';
 import { useChatStore } from '@/lib/stores/chatStore';
 import { sessionApi, chatApi, settingsApi, ApiError } from '@/lib/api';
-import { User, Dice5, Swords, BookOpen, Save, PanelRightClose, PanelRightOpen } from 'lucide-react';
+import { User, Dice5, Swords, BookOpen, Save, Coins, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import ChatPanel from './components/ChatPanel';
 import CharacterSheet from './components/CharacterSheet';
 import DiceRoller from './components/DiceRoller';
 import CombatTracker from './components/CombatTracker';
 import NarrativeLog from './components/NarrativeLog';
 import SaveLoadPanel from './components/SaveLoadPanel';
+import TokenCostPanel from './components/TokenCostPanel';
 import AutoSaveIndicator from './components/AutoSaveIndicator';
 
-type RightPanel = 'character' | 'dice' | 'combat' | 'narrative' | 'save';
+type RightPanel = 'character' | 'dice' | 'combat' | 'narrative' | 'save' | 'cost';
 
 type ProviderId = 'claude' | 'openai' | 'gemini';
 
@@ -39,6 +40,7 @@ const panelTabs: { key: RightPanel; label: string; icon: React.ElementType }[] =
   { key: 'combat', label: '전투', icon: Swords },
   { key: 'narrative', label: '이야기', icon: BookOpen },
   { key: 'save', label: '세이브', icon: Save },
+  { key: 'cost', label: '비용', icon: Coins },
 ];
 
 export default function GameSessionPage() {
@@ -316,6 +318,7 @@ export default function GameSessionPage() {
                 sessionStatus={(session as any)?.status ?? 'waiting'}
               />
             )}
+            {rightPanel === 'cost' && <TokenCostPanel sessionId={sessionId} />}
           </div>
         </div>
       )}
