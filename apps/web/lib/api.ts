@@ -156,3 +156,64 @@ export const settingsApi = {
       };
     }>(`/api/keys/${provider}/models`),
 };
+
+// 세이브/로드 API
+export const saveApi = {
+  list: (sessionId: string) =>
+    fetchApi<{
+      data: Array<{
+        id: string;
+        sessionId: string;
+        saveType: 'manual' | 'auto' | 'pause';
+        name: string;
+        sceneNumber: number;
+        characterCount: number;
+        createdBy: string;
+        createdAt: string;
+      }>;
+    }>(`/api/sessions/${sessionId}/saves`),
+  save: (sessionId: string, name?: string) =>
+    fetchApi<{ data: { id: string; saveType: string; name: string; createdAt: string } }>(
+      `/api/sessions/${sessionId}/save`,
+      {
+        method: 'POST',
+        body: name ? { name } : {},
+      },
+    ),
+  load: (sessionId: string, savePointId: string) =>
+    fetchApi<{ data: { restored: boolean; snapshot: unknown } }>(
+      `/api/sessions/${sessionId}/load/${savePointId}`,
+      { method: 'POST' },
+    ),
+  delete: (sessionId: string, savePointId: string) =>
+    fetchApi<{ message: string }>(`/api/sessions/${sessionId}/saves/${savePointId}`, {
+      method: 'DELETE',
+    }),
+  pause: (sessionId: string) =>
+    fetchApi<{ data: { savePointId: string; status: string } }>(
+      `/api/sessions/${sessionId}/pause`,
+      { method: 'PUT' },
+    ),
+  resume: (sessionId: string) =>
+    fetchApi<{ data: { status: string } }>(`/api/sessions/${sessionId}/resume`, { method: 'PUT' }),
+};
+
+// 캠페인 API
+export const campaignApi = {
+  list: () => fetchApi<{ data: unknown[] }>('/api/campaigns'),
+  get: (id: string) => fetchApi<{ data: unknown }>(`/api/campaigns/${id}`),
+  create: (data: { name: string; description?: string; gameSystem?: string }) =>
+    fetchApi<{ data: unknown }>('/api/campaigns', { method: 'POST', body: data }),
+  update: (id: string, data: unknown) =>
+    fetchApi<{ data: unknown }>(`/api/campaigns/${id}`, { method: 'PATCH', body: data }),
+  createSession: (campaignId: string, data: unknown) =>
+    fetchApi<{ data: unknown }>(`/api/campaigns/${campaignId}/sessions`, {
+      method: 'POST',
+      body: data,
+    }),
+  linkSession: (campaignId: string, sessionId: string) =>
+    fetchApi<{ data: { linked: boolean } }>(
+      `/api/campaigns/${campaignId}/sessions/${sessionId}/link`,
+      { method: 'PUT' },
+    ),
+};
