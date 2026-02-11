@@ -10,6 +10,12 @@ interface DiceResult {
   modifier: number;
 }
 
+interface DiceRequest {
+  notation: string;
+  purpose: string;
+  dc?: number;
+}
+
 interface ChatMessage {
   id: string;
   type: MessageType;
@@ -17,6 +23,7 @@ interface ChatMessage {
   content: string;
   timestamp: string;
   diceResult?: DiceResult;
+  diceRequests?: DiceRequest[];
 }
 
 interface ChatState {

@@ -72,6 +72,16 @@ const GM_SYSTEM_PROMPT = `당신은 TRPG 게임 마스터(GM)입니다. 아래 �
 - diceRolls: 필요한 주사위 굴림
 - rulesApplied: 적용한 규칙 출처 (페이지, 인용)
 
+## 주사위 규칙
+- 주사위 굴림은 플레이어의 영역입니다. GM은 직접 굴리지 않습니다.
+- 판정이 필요할 때 diceRolls에 어떤 주사위를 굴려야 하는지 제안하세요.
+- notation에는 반드시 숫자만 사용하세요.
+- 능력치 수정치 계산: Math.floor((능력치 - 10) / 2)
+  예시: STR 16 → +3, DEX 10 → +0, WIS 8 → -1
+- 올바른 예: "1d20+3", "2d6+1", "1d20-1"
+- 잘못된 예: "1d20+strength_modifier", "1d20+religion_bonus" (변수명 사용 금지)
+- 캐릭터 정보에서 해당 능력치를 확인하고 직접 계산하여 숫자로 표기하세요.
+
 ## 원칙
 - 규칙서에 명시된 규칙만 적용합니다. 환각하지 마세요.
 - 플레이어 캐릭터의 행동을 대신 결정하지 마세요.
@@ -193,7 +203,11 @@ export class ContextManager {
     return characters
       .map((c) => {
         const abilities = Object.entries(c.abilities)
-          .map(([k, v]) => `${k}: ${v}`)
+          .map(([k, v]) => {
+            const mod = Math.floor((v - 10) / 2);
+            const sign = mod >= 0 ? '+' : '';
+            return `${k}: ${v}(${sign}${mod})`;
+          })
           .join(', ');
 
         return `### ${c.name} (${c.race} ${c.class} Lv.${c.level})

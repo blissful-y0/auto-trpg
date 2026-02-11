@@ -112,6 +112,7 @@ export interface GMResponsePayload {
   response: {
     narrative: string;
     stateChanges?: unknown[];
+    diceRequests?: Array<{ notation: string; purpose: string; dc?: number }>;
   };
   timestamp: string;
 }

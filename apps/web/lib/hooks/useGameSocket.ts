@@ -21,7 +21,10 @@ export function useGameSocket(sessionId: string, enabled = true) {
     // GM 응답 수신
     const handleGmResponse = (payload: {
       sessionId: string;
-      response: { narrative: string };
+      response: {
+        narrative: string;
+        diceRequests?: Array<{ notation: string; purpose: string; dc?: number }>;
+      };
       timestamp: string;
     }) => {
       if (payload.sessionId !== sessionId) return;
@@ -35,6 +38,7 @@ export function useGameSocket(sessionId: string, enabled = true) {
           hour: '2-digit',
           minute: '2-digit',
         }),
+        diceRequests: payload.response.diceRequests,
       });
     };
 
