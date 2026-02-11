@@ -30,3 +30,7 @@ export { LLMRouter } from './router';
 // 키 관리
 export { KeyManager } from './keyManager';
 export type { EncryptedData, KeyStore } from './keyManager';
+
+// 토큰 비용 계산
+export { calculateCallCost, getSessionCostReport, formatCostReport } from './tokenCost';
+export type { SessionCostReport, ModelBreakdown, TokenUsageEntry } from './tokenCost';

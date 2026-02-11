@@ -1,6 +1,7 @@
 // 컨텍스트 매니저 v1 — LLM 프롬프트 조립, 메시지 관리
 // v1.1: MemoryHierarchy 통합 (optional)
 
+import type { SupabaseClient } from '@supabase/supabase-js';
 import type { MemoryHierarchy } from '../memory/MemoryHierarchy';
 import type { BudgetProfile } from '../memory/types';
 
@@ -89,7 +90,7 @@ const GM_SYSTEM_PROMPT = `당신은 TRPG 게임 마스터(GM)입니다. 아래 �
 
 // 기본 토큰 예산 (128k 컨텍스트 기준)
 const DEFAULT_MAX_TOKENS = 120000;
-const DEFAULT_MESSAGE_LIMIT = 30;
+const DEFAULT_MESSAGE_LIMIT = 15; // 30→15: 오래된 대화는 장면 요약(Tier 2)으로 압축
 
 // 간이 토큰 추정 (영어 ~4자/토큰, 한국어 ~2자/토큰, 평균 ~3자/토큰)
 function estimateTokens(text: string): number {
@@ -106,8 +107,12 @@ export class ContextManager {
   // 메모리 계층 시스템 (optional)
   private memoryHierarchy?: MemoryHierarchy | null;
 
-  constructor(memoryHierarchy?: MemoryHierarchy | null) {
+  // DB 클라이언트 (optional — 없으면 인메모리 폴백)
+  private supabaseClient?: SupabaseClient;
+
+  constructor(memoryHierarchy?: MemoryHierarchy | null, supabaseClient?: SupabaseClient) {
     this.memoryHierarchy = memoryHierarchy;
+    this.supabaseClient = supabaseClient;
   }
 
   // LLM 프롬프트 조립 (핵심)
@@ -144,7 +149,7 @@ export class ContextManager {
       const tier0Content = messages.filter((m) => m.role === 'system').map((m) => m.content);
       const tier1Content = recentMessages.map((m) => m.content);
 
-      const tiered = this.memoryHierarchy.buildTieredContext(
+      const tiered = await this.memoryHierarchy.buildTieredContext(
         budgetProfile,
         tier0Content,
         tier1Content,
@@ -222,6 +227,38 @@ export class ContextManager {
 
   // 최근 메시지 가져오기 (슬라이딩 윈도우)
   async getRecentMessages(sessionId: string, limit: number = DEFAULT_MESSAGE_LIMIT): Promise<LLMMessage[]> {
+    // DB 클라이언트가 있으면 DB에서 조회
+    if (this.supabaseClient) {
+      try {
+        const { data, error } = await this.supabaseClient
+          .from('messages')
+          .select('sender_type, content, created_at')
+          .eq('session_id', sessionId)
+          .order('created_at', { ascending: false })
+          .limit(limit);
+
+        if (!error && data && data.length > 0) {
+          // DB는 DESC로 가져왔으므로 reverse하여 시간순 정렬
+          const senderTypeToRole = (senderType: string): 'user' | 'assistant' => {
+            if (senderType === 'player') return 'user';
+            return 'assistant'; // gm, system → assistant
+          };
+
+          return data.reverse().map((row) => ({
+            role: senderTypeToRole(row.sender_type),
+            content: row.content,
+          }));
+        }
+
+        if (error) {
+          console.error('[ContextManager] DB 메시지 조회 실패, 인메모리 폴백:', error.message);
+        }
+      } catch (err) {
+        console.error('[ContextManager] DB 메시지 조회 예외, 인메모리 폴백:', err);
+      }
+    }
+
+    // 인메모리 폴백
     const stored = this.messageStore.get(sessionId) || [];
     const recent = stored.slice(-limit);
 

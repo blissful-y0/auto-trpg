@@ -9,4 +9,4 @@ export { SceneDetector } from './SceneDetector';
 export type { SceneDetectParams } from './SceneDetector';
 export { MemoryRetriever } from './MemoryRetriever';
 export { MemoryHierarchy } from './MemoryHierarchy';
-export type { PostResponseParams } from './MemoryHierarchy';
+export type { PostResponseParams, EmbeddingGenerator } from './MemoryHierarchy';

@@ -29,6 +29,12 @@ export function useGameSocket(sessionId: string, enabled = true) {
     }) => {
       if (payload.sessionId !== sessionId) return;
 
+      // GM 응답 대기 상태 해제
+      const store = useChatStore.getState();
+      if (store.isStreaming && !store.streamingContent) {
+        useChatStore.setState({ isStreaming: false });
+      }
+
       addMessage({
         id: `gm-${Date.now()}`,
         type: 'gm',

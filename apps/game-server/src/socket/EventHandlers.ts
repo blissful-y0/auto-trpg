@@ -16,12 +16,14 @@ import type {
   SessionLoadPayload,
   SessionPausePayload,
   SessionResumePayload,
+  SessionCostReportPayload,
 } from './types';
 import type { RoomManager } from './RoomManager';
 import type { ActionQueue } from './ActionQueue';
 import { createGameEngineForSession } from '../bootstrap';
 import { supabaseAdmin } from '../lib/supabase';
 import type { GMResponse } from '../services/game/gmTools';
+import { getSessionCostReport } from '../services/llm/tokenCost';
 import type { GameSessionInfo, CharacterInfo } from '../services/context/ContextManager';
 import type { SaveManager } from '../services/redis/SaveManager';
 import type { PersistenceManager } from '../services/redis/PersistenceManager';
@@ -290,6 +292,27 @@ export function registerHandlers(
           .then(({ error: dbErr }: { error: { message: string } | null }) => {
             if (dbErr) console.error('GM 메시지 저장 실패:', dbErr.message);
           });
+
+        // 토큰 사용량 기록
+        if (response.tokenUsage) {
+          void supabaseAdmin
+            .from('game_events')
+            .insert({
+              session_id: sessionId,
+              event_type: 'token_usage',
+              actor_id: user.userId,
+              data: {
+                promptTokens: response.tokenUsage.promptTokens,
+                completionTokens: response.tokenUsage.completionTokens,
+                totalTokens: response.tokenUsage.totalTokens,
+                model: response.tokenUsage.model,
+                provider: response.tokenUsage.provider,
+              },
+            })
+            .then(({ error: dbErr }: { error: { message: string } | null }) => {
+              if (dbErr) console.error('토큰 사용량 기록 실패:', dbErr.message);
+            });
+        }
       })
       .catch((err) => {
         socket.emit('error', {
@@ -323,6 +346,8 @@ export function registerHandlers(
 
       const total = rolls.reduce((sum, r) => sum + r, 0) + modifier;
 
+      const notation = `${rollCount}${dice}${modifier > 0 ? `+${modifier}` : modifier < 0 ? `${modifier}` : ''}`;
+
       // 결과 브로드캐스트
       io.to(sessionId).emit('dice:result', {
         sessionId,
@@ -334,6 +359,49 @@ export function registerHandlers(
         total,
         reason,
       });
+
+      // 주사위 결과를 GM에게 전달하여 후속 내러티브 생성
+      if (reason) {
+        const diceMessage = `[주사위 결과] ${reason}: ${notation} → [${rolls.join(', ')}] = ${total}`;
+        actionQueue
+          .enqueue(sessionId, async () => {
+            return processWithGameEngine(sessionId, user.userId, diceMessage);
+          })
+          .then((result) => {
+            const response = result as GMResponse;
+            if (response.narrative) {
+              io.to(sessionId).emit('gm:response', {
+                sessionId,
+                response: {
+                  narrative: response.narrative,
+                  stateChanges: response.stateChanges || [],
+                  diceRequests: response.diceRolls || [],
+                },
+                timestamp: new Date().toISOString(),
+              });
+
+              // GM 후속 응답 DB 저장
+              void supabaseAdmin
+                .from('messages')
+                .insert({
+                  session_id: sessionId,
+                  sender_type: 'gm',
+                  content: response.narrative,
+                  metadata: {
+                    stateChanges: response.stateChanges,
+                    diceRequests: response.diceRolls,
+                    triggeredByDice: { notation, rolls, total, reason },
+                  },
+                })
+                .then(({ error: dbErr }: { error: { message: string } | null }) => {
+                  if (dbErr) console.error('GM 후속 응답 저장 실패:', dbErr.message);
+                });
+            }
+          })
+          .catch((err) => {
+            console.error('주사위 결과 GM 처리 실패:', err);
+          });
+      }
     } catch (err) {
       socket.emit('error', {
         code: 'DICE_ERROR',
@@ -410,6 +478,27 @@ export function registerHandlers(
               .then(({ error: dbErr }: { error: { message: string } | null }) => {
                 if (dbErr) console.error('GM 메시지 저장 실패:', dbErr.message);
               });
+
+            // 토큰 사용량 기록
+            if (response.tokenUsage) {
+              void supabaseAdmin
+                .from('game_events')
+                .insert({
+                  session_id: sessionId,
+                  event_type: 'token_usage',
+                  actor_id: user.userId,
+                  data: {
+                    promptTokens: response.tokenUsage.promptTokens,
+                    completionTokens: response.tokenUsage.completionTokens,
+                    totalTokens: response.tokenUsage.totalTokens,
+                    model: response.tokenUsage.model,
+                    provider: response.tokenUsage.provider,
+                  },
+                })
+                .then(({ error: dbErr }: { error: { message: string } | null }) => {
+                  if (dbErr) console.error('토큰 사용량 기록 실패:', dbErr.message);
+                });
+            }
           })
           .catch((err) => {
             socket.emit('error', {
@@ -658,6 +747,41 @@ export function registerHandlers(
       socket.emit('error', {
         code: 'RESUME_ERROR',
         message: err instanceof Error ? err.message : '재개 중 오류가 발생했습니다.',
+      });
+    }
+  });
+
+  // session:costReport — 세션별 토큰 비용 리포트
+  socket.on('session:costReport', async (payload: SessionCostReportPayload) => {
+    try {
+      const { sessionId } = payload;
+
+      const authorized = await requireSessionMembership(sessionId, user.userId, roomManager);
+      if (!authorized) {
+        socket.emit('error', { code: 'FORBIDDEN', message: '이 세션의 리포트를 조회할 권한이 없습니다.' });
+        return;
+      }
+
+      const report = await getSessionCostReport(supabaseAdmin, sessionId);
+
+      socket.emit('session:costReportResult', {
+        sessionId: report.sessionId,
+        totalCalls: report.totalCalls,
+        totalTokens: report.totalTokens,
+        estimatedCostUSD: report.estimatedCostUSD,
+        estimatedCostKRW: report.estimatedCostKRW,
+        byModel: report.byModel.map((m) => ({
+          model: m.model,
+          provider: m.provider,
+          callCount: m.callCount,
+          totalTokens: m.totalTokens,
+          estimatedCostUSD: m.estimatedCostUSD,
+        })),
+      });
+    } catch (err) {
+      socket.emit('error', {
+        code: 'COST_REPORT_ERROR',
+        message: err instanceof Error ? err.message : '비용 리포트 조회 중 오류가 발생했습니다.',
       });
     }
   });

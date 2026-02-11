@@ -127,6 +127,23 @@ export class OpenAIProvider implements LLMProvider {
     };
   }
 
+
+  async generateEmbedding(text: string, model?: string): Promise<{ embedding: number[]; usage: { promptTokens: number; completionTokens: number; totalTokens: number } }> {
+    const response = await this.client.embeddings.create({
+      model: model ?? 'text-embedding-3-small',
+      input: text,
+    });
+
+    return {
+      embedding: response.data[0].embedding,
+      usage: {
+        promptTokens: response.usage.prompt_tokens,
+        completionTokens: 0,
+        totalTokens: response.usage.total_tokens,
+      },
+    };
+  }
+
   countTokens(text: string): number {
     // 영어 단어수 × 1.3 + 한국어 글자수 × 0.5 근사치
     const koreanChars = (text.match(/[\uAC00-\uD7AF]/g) ?? []).length;

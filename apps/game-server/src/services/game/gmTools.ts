@@ -117,6 +117,14 @@ export interface GMResponse {
   diceRolls?: DiceRollRequest[];
   rulesApplied?: RuleReference[];
   sceneTransition?: SceneTransition | null;
+  // 토큰 사용량 (모니터링용 — LLM 호출 시에만 존재)
+  tokenUsage?: {
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+    model?: string;
+    provider?: string;
+  };
 }
 
 export interface StateChange {

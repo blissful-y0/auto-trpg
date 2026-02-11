@@ -24,7 +24,7 @@ function createMockSummarizer(): Summarizer {
 
 describe('MemoryHierarchy', () => {
   describe('buildTieredContext', () => {
-    it('예산 내에서 컨텍스트 생성', () => {
+    it('예산 내에서 컨텍스트 생성', async () => {
       const hierarchy = new MemoryHierarchy(
         new BudgetAllocator(),
         createMockSummarizer(),
@@ -33,7 +33,7 @@ describe('MemoryHierarchy', () => {
         new MemoryRetriever(),
       );
 
-      const result = hierarchy.buildTieredContext(
+      const result = await hierarchy.buildTieredContext(
         'exploration',
         ['시스템 프롬프트', '캐릭터 시트'],
         ['최근 메시지 1', '최근 메시지 2'],
@@ -46,7 +46,7 @@ describe('MemoryHierarchy', () => {
       expect(result.budget.total).toBe(80000);
     });
 
-    it('예산 초과 콘텐츠 잘림', () => {
+    it('예산 초과 콘텐츠 잘림', async () => {
       const hierarchy = new MemoryHierarchy(
         new BudgetAllocator(),
         createMockSummarizer(),
@@ -57,7 +57,7 @@ describe('MemoryHierarchy', () => {
 
       // 매우 긴 콘텐츠 생성 (tier0 예산 초과하도록)
       const longContent = 'a'.repeat(100000); // ~33333 토큰
-      const result = hierarchy.buildTieredContext(
+      const result = await hierarchy.buildTieredContext(
         'skill_check', // tier0: 25000 토큰
         [longContent, '추가 콘텐츠'],
         [],
@@ -67,12 +67,12 @@ describe('MemoryHierarchy', () => {
       expect(result.tier0.length).toBeLessThanOrEqual(1);
     });
 
-    it('MemoryRetriever로 tier2/3 검색', () => {
+    it('MemoryRetriever로 tier2/3 검색', async () => {
       const retriever = new MemoryRetriever();
       // 장면 요약 추가 (벡터 유사도 테스트용)
-      retriever.addSceneSummary('session-1', '고블린 전투 장면', [1, 0, 0]);
-      retriever.addSceneSummary('session-1', '마을 탐색 장면', [0, 1, 0]);
-      retriever.addSessionSummary('session-1', '세션 전체 요약', [0.5, 0.5, 0]);
+      await retriever.addSceneSummary('session-1', '고블린 전투 장면', [1, 0, 0]);
+      await retriever.addSceneSummary('session-1', '마을 탐색 장면', [0, 1, 0]);
+      await retriever.addSessionSummary('session-1', '세션 전체 요약', [0.5, 0.5, 0]);
 
       const hierarchy = new MemoryHierarchy(
         new BudgetAllocator(),
@@ -82,7 +82,7 @@ describe('MemoryHierarchy', () => {
         retriever,
       );
 
-      const result = hierarchy.buildTieredContext(
+      const result = await hierarchy.buildTieredContext(
         'combat',
         ['시스템 프롬프트'],
         ['최근 메시지'],
