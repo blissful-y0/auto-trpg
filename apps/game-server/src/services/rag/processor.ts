@@ -112,7 +112,12 @@ export class RulebookProcessor {
     }
 
     if (status === 'completed') {
+      update.status = 'ready';
       update.processed_at = new Date().toISOString();
+    }
+
+    if (status === 'failed') {
+      update.status = 'error';
     }
 
     const { error: dbError } = await this.supabase

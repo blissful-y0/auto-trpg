@@ -16,6 +16,7 @@ import { rulebookApi } from '@/lib/api';
 
 const statusConfig: Record<string, { text: string; className: string; icon: React.ElementType }> = {
   ready: { text: '사용 가능', className: 'bg-success/15 text-success', icon: CheckCircle2 },
+  uploading: { text: '업로드 중', className: 'bg-warning/15 text-warning', icon: Clock },
   processing: { text: '처리 중', className: 'bg-warning/15 text-warning', icon: Clock },
   error: { text: '오류', className: 'bg-danger/15 text-danger', icon: AlertCircle },
 };
@@ -25,7 +26,7 @@ export default function RulebooksPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const fetchRulebooks = () => {
     rulebookApi.list()
       .then((res: any) => {
         setRulebooks(res?.data || []);
@@ -35,7 +36,22 @@ export default function RulebooksPage() {
         toast.error('규칙서 목록을 불러올 수 없습니다');
       })
       .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    fetchRulebooks();
   }, []);
+
+  // processing/uploading 상태의 규칙서가 있으면 10초마다 폴링
+  useEffect(() => {
+    const hasProcessing = rulebooks.some(
+      (b) => b.status === 'processing' || b.status === 'uploading',
+    );
+    if (!hasProcessing) return;
+
+    const interval = setInterval(fetchRulebooks, 10_000);
+    return () => clearInterval(interval);
+  }, [rulebooks]);
 
   if (loading) {
     return (
@@ -122,10 +138,10 @@ export default function RulebooksPage() {
                   </span>
                 </div>
                 <div className="text-sm text-text-tertiary space-y-1">
-                  {book.pages && (
+                  {book.page_count && (
                     <p className="flex items-center gap-2">
                       <FileText size={14} className="text-text-tertiary" />
-                      {book.pages} 페이지
+                      {book.page_count} 페이지
                     </p>
                   )}
                   <p className="flex items-center gap-2">

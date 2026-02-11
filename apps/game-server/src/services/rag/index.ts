@@ -3,6 +3,7 @@ export { SemanticChunker } from './chunker';
 export { Embedder } from './embedder';
 export { RuleRetriever } from './retriever';
 export { RulebookProcessor } from './processor';
+export { extractTextFromS3 } from './pdf-extractor';
 export { Reranker } from './reranker';
 export { RuleChainer } from './rule-chainer';
 export { HotCache } from './hot-cache';
