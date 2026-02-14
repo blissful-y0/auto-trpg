@@ -6,6 +6,7 @@ import { supabaseAdmin } from '../lib/supabase';
 import { config } from '../config';
 import { RoomManager } from './RoomManager';
 import { ActionQueue } from './ActionQueue';
+import { SocketThrottle } from './SocketThrottle';
 import { registerHandlers } from './EventHandlers';
 import type { ClientEvents, ServerEvents, SocketData } from './types';
 import type { SaveManager } from '../services/redis/SaveManager';
@@ -14,6 +15,7 @@ import type { PersistenceManager } from '../services/redis/PersistenceManager';
 // 공유 인스턴스
 const roomManager = new RoomManager();
 const actionQueue = new ActionQueue();
+const socketThrottle = new SocketThrottle();
 
 export type TypedSocketServer = Server<ClientEvents, ServerEvents, Record<string, never>, SocketData>;
 
@@ -71,7 +73,7 @@ export function createSocketServer(httpServer: HTTPServer): TypedSocketServer {
     console.log(`소켓 연결: ${socket.id} (사용자: ${socket.data.user.userId})`);
 
     // 이벤트 핸들러 등록
-    registerHandlers(io, socket, roomManager, actionQueue, _saveManager, _persistenceManager);
+    registerHandlers(io, socket, roomManager, actionQueue, _saveManager, _persistenceManager, socketThrottle);
 
     socket.on('disconnect', (reason) => {
       console.log(`소켓 연결 종료: ${socket.id} (이유: ${reason})`);

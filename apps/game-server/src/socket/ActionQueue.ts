@@ -2,15 +2,33 @@
 
 import type { QueueItem } from './types';
 
+/** 큐 용량 초과 에러 */
+export class QueueFullError extends Error {
+  constructor(sessionId: string, maxSize: number) {
+    super(`세션 ${sessionId}의 액션 큐가 가득 찼습니다. (최대 ${maxSize}개)`);
+    this.name = 'QueueFullError';
+  }
+}
+
 export class ActionQueue {
   private queues: Map<string, QueueItem[]> = new Map();
   private processing: Map<string, boolean> = new Map();
+  private readonly maxQueueSize: number;
 
-  // 액션 큐에 추가 및 실행
+  constructor(maxQueueSize = 10) {
+    this.maxQueueSize = maxQueueSize;
+  }
+
+  // 액션 큐에 추가 및 실행 (용량 초과 시 거부)
   async enqueue<T = unknown>(
     sessionId: string,
     handler: () => Promise<T>,
   ): Promise<T> {
+    const currentSize = this.getQueueSize(sessionId);
+    if (currentSize >= this.maxQueueSize) {
+      throw new QueueFullError(sessionId, this.maxQueueSize);
+    }
+
     return new Promise<T>((resolve, reject) => {
       const item: QueueItem = {
         resolve: resolve as (value: unknown) => void,

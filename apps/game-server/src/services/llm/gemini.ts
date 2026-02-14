@@ -20,6 +20,7 @@ import type {
   LLMStreamChunk,
   LLMToolResponse,
 } from './provider';
+import { withRetry } from './retry';
 
 /** 기본 Gemini 모델 */
 const DEFAULT_MODEL = 'gemini-2.0-flash';
@@ -133,28 +134,34 @@ export class GeminiProvider implements LLMProvider {
 
     const contents = this.convertMessages(request);
 
-    const result: GenerateContentResult = await model.generateContent({
-      contents,
-      generationConfig: {
-        maxOutputTokens: request.maxTokens ?? 4096,
-        temperature: request.temperature ?? 0.7,
-      },
-    });
+    return withRetry(
+      async () => {
+        const result: GenerateContentResult = await model.generateContent({
+          contents,
+          generationConfig: {
+            maxOutputTokens: request.maxTokens ?? 4096,
+            temperature: request.temperature ?? 0.7,
+          },
+        });
 
-    const response = result.response;
-    const text = response.text();
-    const usage = response.usageMetadata;
+        const response = result.response;
+        const text = response.text();
+        const usage = response.usageMetadata;
 
-    return {
-      content: text,
-      model: modelName,
-      usage: {
-        promptTokens: usage?.promptTokenCount ?? 0,
-        completionTokens: usage?.candidatesTokenCount ?? 0,
-        totalTokens: usage?.totalTokenCount ?? 0,
+        return {
+          content: text,
+          model: modelName,
+          usage: {
+            promptTokens: usage?.promptTokenCount ?? 0,
+            completionTokens: usage?.candidatesTokenCount ?? 0,
+            totalTokens: usage?.totalTokenCount ?? 0,
+          },
+          finishReason: response.candidates?.[0]?.finishReason ?? 'unknown',
+        };
       },
-      finishReason: response.candidates?.[0]?.finishReason ?? 'unknown',
-    };
+      'Gemini',
+      'generateText',
+    );
   }
 
   async *generateStream(request: LLMRequest): AsyncGenerator<LLMStreamChunk> {
@@ -166,34 +173,48 @@ export class GeminiProvider implements LLMProvider {
 
     const contents = this.convertMessages(request);
 
-    const result = await model.generateContentStream({
-      contents,
-      generationConfig: {
-        maxOutputTokens: request.maxTokens ?? 4096,
-        temperature: request.temperature ?? 0.7,
-      },
-    });
+    // 스트림 생성을 재시도 (생성 시점의 네트워크/rate limit 에러 대응)
+    const result = await withRetry(
+      async () =>
+        model.generateContentStream({
+          contents,
+          generationConfig: {
+            maxOutputTokens: request.maxTokens ?? 4096,
+            temperature: request.temperature ?? 0.7,
+          },
+        }),
+      'Gemini',
+      'generateStream(create)',
+    );
 
-    for await (const chunk of result.stream) {
-      const text = chunk.text();
-      if (text) {
-        yield { content: text, done: false };
+    try {
+      for await (const chunk of result.stream) {
+        const text = chunk.text();
+        if (text) {
+          yield { content: text, done: false };
+        }
       }
+
+      // 스트림 완료 후 최종 응답에서 usage 추출
+      const finalResponse = await result.response;
+      const usage = finalResponse.usageMetadata;
+
+      yield {
+        content: '',
+        done: true,
+        usage: {
+          promptTokens: usage?.promptTokenCount ?? 0,
+          completionTokens: usage?.candidatesTokenCount ?? 0,
+          totalTokens: usage?.totalTokenCount ?? 0,
+        },
+      };
+    } catch (error) {
+      console.error(
+        '[Gemini] generateStream 스트림 읽기 중 에러:',
+        error instanceof Error ? error.message : error,
+      );
+      yield { content: '', done: true };
     }
-
-    // 스트림 완료 후 최종 응답에서 usage 추출
-    const finalResponse = await result.response;
-    const usage = finalResponse.usageMetadata;
-
-    yield {
-      content: '',
-      done: true,
-      usage: {
-        promptTokens: usage?.promptTokenCount ?? 0,
-        completionTokens: usage?.candidatesTokenCount ?? 0,
-        totalTokens: usage?.totalTokenCount ?? 0,
-      },
-    };
   }
 
   async generateWithTools(request: LLMRequest): Promise<LLMToolResponse> {
@@ -223,41 +244,47 @@ export class GeminiProvider implements LLMProvider {
 
     const contents = this.convertMessages(request);
 
-    const result = await model.generateContent({
-      contents,
-      generationConfig: {
-        maxOutputTokens: request.maxTokens ?? 4096,
-        temperature: request.temperature ?? 0.7,
+    return withRetry(
+      async () => {
+        const result = await model.generateContent({
+          contents,
+          generationConfig: {
+            maxOutputTokens: request.maxTokens ?? 4096,
+            temperature: request.temperature ?? 0.7,
+          },
+        });
+
+        const response = result.response;
+        const text = response.text();
+        const usage = response.usageMetadata;
+
+        // function call 추출
+        const toolCalls = (response.candidates?.[0]?.content?.parts ?? [])
+          .filter((part: { functionCall?: unknown }) => part.functionCall != null)
+          .map((part: { functionCall?: { name?: string; args?: unknown } }, index: number) => ({
+            id: `call_${index}`,
+            name: part.functionCall?.name ?? 'unknown_function',
+            arguments:
+              part.functionCall?.args && typeof part.functionCall.args === 'object'
+                ? (part.functionCall.args as Record<string, unknown>)
+                : {},
+          }));
+
+        return {
+          content: text,
+          toolCalls,
+          model: modelName,
+          usage: {
+            promptTokens: usage?.promptTokenCount ?? 0,
+            completionTokens: usage?.candidatesTokenCount ?? 0,
+            totalTokens: usage?.totalTokenCount ?? 0,
+          },
+          finishReason: response.candidates?.[0]?.finishReason ?? 'unknown',
+        };
       },
-    });
-
-    const response = result.response;
-    const text = response.text();
-    const usage = response.usageMetadata;
-
-    // function call 추출
-    const toolCalls = (response.candidates?.[0]?.content?.parts ?? [])
-      .filter((part: { functionCall?: unknown }) => part.functionCall != null)
-      .map((part: { functionCall?: { name?: string; args?: unknown } }, index: number) => ({
-        id: `call_${index}`,
-        name: part.functionCall?.name ?? 'unknown_function',
-        arguments:
-          part.functionCall?.args && typeof part.functionCall.args === 'object'
-            ? (part.functionCall.args as Record<string, unknown>)
-            : {},
-      }));
-
-    return {
-      content: text,
-      toolCalls,
-      model: modelName,
-      usage: {
-        promptTokens: usage?.promptTokenCount ?? 0,
-        completionTokens: usage?.candidatesTokenCount ?? 0,
-        totalTokens: usage?.totalTokenCount ?? 0,
-      },
-      finishReason: response.candidates?.[0]?.finishReason ?? 'unknown',
-    };
+      'Gemini',
+      'generateWithTools',
+    );
   }
 
   countTokens(text: string): number {

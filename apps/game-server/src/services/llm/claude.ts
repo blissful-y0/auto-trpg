@@ -12,6 +12,7 @@ import type {
   LLMStreamChunk,
   LLMToolResponse,
 } from './provider';
+import { withRetry } from './retry';
 
 /** 기본 Claude 모델 */
 const DEFAULT_MODEL = 'claude-sonnet-4-20250514';
@@ -28,63 +29,83 @@ export class ClaudeProvider implements LLMProvider {
     const messages = this.convertMessages(request);
     const systemPrompt = this.extractSystemPrompt(request);
 
-    const response = await this.client.messages.create({
-      model: request.model ?? DEFAULT_MODEL,
-      max_tokens: request.maxTokens ?? 4096,
-      temperature: request.temperature ?? 0.7,
-      system: systemPrompt,
-      messages,
-    });
+    return withRetry(
+      async () => {
+        const response = await this.client.messages.create({
+          model: request.model ?? DEFAULT_MODEL,
+          max_tokens: request.maxTokens ?? 4096,
+          temperature: request.temperature ?? 0.7,
+          system: systemPrompt,
+          messages,
+        });
 
-    const textContent = response.content
-      .filter((block): block is Anthropic.TextBlock => block.type === 'text')
-      .map((block) => block.text)
-      .join('');
+        const textContent = response.content
+          .filter((block): block is Anthropic.TextBlock => block.type === 'text')
+          .map((block) => block.text)
+          .join('');
 
-    return {
-      content: textContent,
-      model: response.model,
-      usage: {
-        promptTokens: response.usage.input_tokens,
-        completionTokens: response.usage.output_tokens,
-        totalTokens: response.usage.input_tokens + response.usage.output_tokens,
+        return {
+          content: textContent,
+          model: response.model,
+          usage: {
+            promptTokens: response.usage.input_tokens,
+            completionTokens: response.usage.output_tokens,
+            totalTokens: response.usage.input_tokens + response.usage.output_tokens,
+          },
+          finishReason: response.stop_reason ?? 'unknown',
+        };
       },
-      finishReason: response.stop_reason ?? 'unknown',
-    };
+      'Claude',
+      'generateText',
+    );
   }
 
   async *generateStream(request: LLMRequest): AsyncGenerator<LLMStreamChunk> {
     const messages = this.convertMessages(request);
     const systemPrompt = this.extractSystemPrompt(request);
 
-    const stream = this.client.messages.stream({
-      model: request.model ?? DEFAULT_MODEL,
-      max_tokens: request.maxTokens ?? 4096,
-      temperature: request.temperature ?? 0.7,
-      system: systemPrompt,
-      messages,
-    });
+    // 스트림 생성을 재시도 (생성 시점의 네트워크/rate limit 에러 대응)
+    const stream = await withRetry(
+      async () =>
+        this.client.messages.stream({
+          model: request.model ?? DEFAULT_MODEL,
+          max_tokens: request.maxTokens ?? 4096,
+          temperature: request.temperature ?? 0.7,
+          system: systemPrompt,
+          messages,
+        }),
+      'Claude',
+      'generateStream(create)',
+    );
 
-    for await (const event of stream) {
-      if (
-        event.type === 'content_block_delta' &&
-        event.delta.type === 'text_delta'
-      ) {
-        yield { content: event.delta.text, done: false };
+    try {
+      for await (const event of stream) {
+        if (
+          event.type === 'content_block_delta' &&
+          event.delta.type === 'text_delta'
+        ) {
+          yield { content: event.delta.text, done: false };
+        }
       }
-    }
 
-    const finalMessage = await stream.finalMessage();
-    yield {
-      content: '',
-      done: true,
-      usage: {
-        promptTokens: finalMessage.usage.input_tokens,
-        completionTokens: finalMessage.usage.output_tokens,
-        totalTokens:
-          finalMessage.usage.input_tokens + finalMessage.usage.output_tokens,
-      },
-    };
+      const finalMessage = await stream.finalMessage();
+      yield {
+        content: '',
+        done: true,
+        usage: {
+          promptTokens: finalMessage.usage.input_tokens,
+          completionTokens: finalMessage.usage.output_tokens,
+          totalTokens:
+            finalMessage.usage.input_tokens + finalMessage.usage.output_tokens,
+        },
+      };
+    } catch (error) {
+      console.error(
+        '[Claude] generateStream 스트림 읽기 중 에러:',
+        error instanceof Error ? error.message : error,
+      );
+      yield { content: '', done: true };
+    }
   }
 
   async generateWithTools(request: LLMRequest): Promise<LLMToolResponse> {
@@ -98,42 +119,48 @@ export class ClaudeProvider implements LLMProvider {
       input_schema: tool.parameters as Anthropic.Tool.InputSchema,
     }));
 
-    const response = await this.client.messages.create({
-      model: request.model ?? DEFAULT_MODEL,
-      max_tokens: request.maxTokens ?? 4096,
-      temperature: request.temperature ?? 0.7,
-      system: systemPrompt,
-      messages,
-      tools,
-      tool_choice: request.toolChoice === 'required' ? { type: 'any' as const } : undefined,
-    });
+    return withRetry(
+      async () => {
+        const response = await this.client.messages.create({
+          model: request.model ?? DEFAULT_MODEL,
+          max_tokens: request.maxTokens ?? 4096,
+          temperature: request.temperature ?? 0.7,
+          system: systemPrompt,
+          messages,
+          tools,
+          tool_choice: request.toolChoice === 'required' ? { type: 'any' as const } : undefined,
+        });
 
-    const textContent = response.content
-      .filter((block): block is Anthropic.TextBlock => block.type === 'text')
-      .map((block) => block.text)
-      .join('');
+        const textContent = response.content
+          .filter((block): block is Anthropic.TextBlock => block.type === 'text')
+          .map((block) => block.text)
+          .join('');
 
-    const toolCalls = response.content
-      .filter(
-        (block): block is Anthropic.ToolUseBlock => block.type === 'tool_use',
-      )
-      .map((block) => ({
-        id: block.id,
-        name: block.name,
-        arguments: block.input as Record<string, unknown>,
-      }));
+        const toolCalls = response.content
+          .filter(
+            (block): block is Anthropic.ToolUseBlock => block.type === 'tool_use',
+          )
+          .map((block) => ({
+            id: block.id,
+            name: block.name,
+            arguments: block.input as Record<string, unknown>,
+          }));
 
-    return {
-      content: textContent,
-      toolCalls,
-      model: response.model,
-      usage: {
-        promptTokens: response.usage.input_tokens,
-        completionTokens: response.usage.output_tokens,
-        totalTokens: response.usage.input_tokens + response.usage.output_tokens,
+        return {
+          content: textContent,
+          toolCalls,
+          model: response.model,
+          usage: {
+            promptTokens: response.usage.input_tokens,
+            completionTokens: response.usage.output_tokens,
+            totalTokens: response.usage.input_tokens + response.usage.output_tokens,
+          },
+          finishReason: response.stop_reason ?? 'unknown',
+        };
       },
-      finishReason: response.stop_reason ?? 'unknown',
-    };
+      'Claude',
+      'generateWithTools',
+    );
   }
 
   countTokens(text: string): number {
