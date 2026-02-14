@@ -19,6 +19,10 @@ const registerKeySchema = z.object({
   apiKey: z.string().min(10).max(500),
 });
 
+const rotateKeySchema = z.object({
+  apiKey: z.string().min(10).max(500),
+});
+
 const providerParamSchema = z.object({
   provider: z.enum(['claude', 'openai', 'gemini']),
 });
@@ -262,6 +266,10 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
           iv: encrypted.iv,
           auth_tag: encrypted.authTag,
           key_hint: keyHint,
+          previous_encrypted_key: null,
+          previous_iv: null,
+          previous_auth_tag: null,
+          previous_key_hint: null,
           is_valid: null, // 재검증 필요
         })
         .eq('id', existing.id)
@@ -318,6 +326,165 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
   }
 });
 
+// POST /api/keys/:provider/rotate — 기존 키를 새 키로 교체 + 롤백용 이전 키 보관
+router.post('/:provider/rotate', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const userId = req.user!.id;
+    const parsedProvider = providerParamSchema.safeParse(req.params);
+    if (!parsedProvider.success) {
+      throw new AppError(400, `provider 파라미터가 올바르지 않습니다: ${parsedProvider.error.message}`);
+    }
+
+    const parsedBody = rotateKeySchema.safeParse(req.body);
+    if (!parsedBody.success) {
+      throw new AppError(400, `요청 데이터가 올바르지 않습니다: ${parsedBody.error.message}`);
+    }
+
+    const provider = parsedProvider.data.provider;
+    const { apiKey } = parsedBody.data;
+
+    const { data: currentRecord, error: fetchError } = await supabaseAdmin
+      .from('user_api_keys')
+      .select(
+        'id, encrypted_key, iv, auth_tag, key_hint, previous_key_hint, previous_encrypted_key, previous_iv, previous_auth_tag',
+      )
+      .eq('user_id', userId)
+      .eq('provider', provider)
+      .is('deleted_at', null)
+      .maybeSingle();
+
+    if (fetchError) {
+      throw new AppError(500, `기존 API 키 조회 실패: ${fetchError.message}`);
+    }
+
+    if (!currentRecord) {
+      throw new AppError(404, `${provider} API 키가 등록되지 않았습니다.`);
+    }
+
+    const autoValidation = await quickValidate(provider, apiKey);
+    if (!autoValidation.isValid) {
+      const status = autoValidation.code === 'SERVICE_UNAVAILABLE' ? 503 : 400;
+      throw new AppError(status, autoValidation.message);
+    }
+
+    const encrypted = encrypt(apiKey);
+    const keyHint = createKeyHint(apiKey);
+
+    const { data: updated, error: updateError } = await supabaseAdmin
+      .from('user_api_keys')
+      .update({
+        previous_encrypted_key: currentRecord.encrypted_key,
+        previous_iv: currentRecord.iv,
+        previous_auth_tag: currentRecord.auth_tag,
+        previous_key_hint: currentRecord.key_hint,
+        encrypted_key: encrypted.encryptedKey,
+        iv: encrypted.iv,
+        auth_tag: encrypted.authTag,
+        key_hint: keyHint,
+        is_valid: autoValidation.isValid,
+      })
+      .eq('id', currentRecord.id)
+      .select('id, provider, key_hint, is_valid, created_at, updated_at')
+      .single();
+
+    if (updateError) {
+      throw new AppError(500, `API 키 회전 실패: ${updateError.message}`);
+    }
+
+    await invalidateModelCache(userId, provider);
+
+    res.json({
+      data: {
+        ...updated,
+        autoValidation,
+        rotation: {
+          rotated: true,
+          previousKeyHint: currentRecord.key_hint,
+          newKeyHint: keyHint,
+        },
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/keys/:provider/rollback — 이전 키로 되돌리기
+router.post('/:provider/rollback', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const userId = req.user!.id;
+    const parsedProvider = providerParamSchema.safeParse(req.params);
+    if (!parsedProvider.success) {
+      throw new AppError(400, `provider 파라미터가 올바르지 않습니다: ${parsedProvider.error.message}`);
+    }
+
+    const provider = parsedProvider.data.provider;
+
+    const { data: currentRecord, error: fetchError } = await supabaseAdmin
+      .from('user_api_keys')
+      .select(
+        'id, key_hint, previous_key_hint, encrypted_key, iv, auth_tag, previous_encrypted_key, previous_iv, previous_auth_tag',
+      )
+      .eq('user_id', userId)
+      .eq('provider', provider)
+      .is('deleted_at', null)
+      .maybeSingle();
+
+    if (fetchError) {
+      throw new AppError(500, `기존 API 키 조회 실패: ${fetchError.message}`);
+    }
+
+    if (!currentRecord) {
+      throw new AppError(404, `${provider} API 키가 등록되지 않았습니다.`);
+    }
+
+    if (
+      currentRecord.previous_encrypted_key == null ||
+      currentRecord.previous_iv == null ||
+      currentRecord.previous_auth_tag == null ||
+      currentRecord.previous_key_hint == null
+    ) {
+      throw new AppError(400, `롤백 가능한 이전 키가 없습니다.`);
+    }
+
+    const { data: rolledBack, error: rollbackError } = await supabaseAdmin
+      .from('user_api_keys')
+      .update({
+        encrypted_key: currentRecord.previous_encrypted_key,
+        iv: currentRecord.previous_iv,
+        auth_tag: currentRecord.previous_auth_tag,
+        key_hint: currentRecord.previous_key_hint,
+        is_valid: null,
+        previous_encrypted_key: null,
+        previous_iv: null,
+        previous_auth_tag: null,
+        previous_key_hint: null,
+      })
+      .eq('id', currentRecord.id)
+      .select('id, provider, key_hint, is_valid, created_at, updated_at')
+      .single();
+
+    if (rollbackError) {
+      throw new AppError(500, `API 키 롤백 실패: ${rollbackError.message}`);
+    }
+
+    await invalidateModelCache(userId, provider);
+
+    res.json({
+      data: {
+        ...rolledBack,
+        rotation: {
+          rolledBack: true,
+          restoredKeyHint: currentRecord.previous_key_hint,
+          previousKeyHint: currentRecord.key_hint,
+        },
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /api/keys — 내 API 키 목록 (힌트만)
 router.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -326,7 +493,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
     // soft-delete 제외
     const { data: keys, error } = await supabaseAdmin
       .from('user_api_keys')
-      .select('id, provider, key_hint, is_valid, created_at, updated_at')
+      .select('id, provider, key_hint, previous_key_hint, is_valid, created_at, updated_at')
       .eq('user_id', userId)
       .is('deleted_at', null)
       .order('provider', { ascending: true });
