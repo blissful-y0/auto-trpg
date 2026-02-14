@@ -15,6 +15,7 @@ import type { SummarizerLLM } from './services/memory/Summarizer';
 import { StateTracker } from './services/memory/StateTracker';
 import { SceneDetector } from './services/memory/SceneDetector';
 import { MemoryRetriever } from './services/memory/MemoryRetriever';
+import { Embedder, RuleRetriever } from './services/rag';
 
 /**
  * 세션에 대한 GameEngine 인스턴스 생성
@@ -28,10 +29,12 @@ export async function createGameEngineForSession(
   sessionId: string,
   userId: string,
 ): Promise<GameEngine> {
+  // 소프트 삭제된 세션 제외
   const { data: sessionRow } = await supabaseAdmin
     .from('game_sessions')
     .select('primary_provider, settings')
     .eq('id', sessionId)
+    .is('deleted_at', null)
     .single();
 
   const settings =
@@ -54,19 +57,20 @@ export async function createGameEngineForSession(
       : undefined;
 
   // 1. 사용자 API 키 로드
+  // 소프트 삭제된 API 키 제외
   const { data: keyRecords } = await supabaseAdmin
     .from('user_api_keys')
     .select('provider, encrypted_key, iv, auth_tag')
-    .eq('user_id', userId);
+    .eq('user_id', userId)
+    .is('deleted_at', null);
 
   // 2. LLM 라우터 생성 (키가 있는 경우만)
+  const apiKeyMap = new Map<LLMProviderId, string>();
   let llmWrapper: { call: (messages: unknown[], tools: unknown[]) => Promise<GMResponse> } | null =
     null;
   let llmRouter: LLMRouter | null = null;
 
   if (keyRecords && keyRecords.length > 0) {
-    const apiKeyMap = new Map<LLMProviderId, string>();
-
     for (const record of keyRecords) {
       try {
         const decryptedKey = decrypt(record.encrypted_key, record.iv, record.auth_tag);
@@ -161,6 +165,16 @@ export async function createGameEngineForSession(
   }
 
   // 3. MemoryHierarchy 컴포넌트 생성
+  const hasOpenAIEmbedding = Boolean(process.env.OPENAI_API_KEY) || apiKeyMap.has('openai');
+  const ruleRetriever = hasOpenAIEmbedding
+    ? new RuleRetriever(
+        supabaseAdmin,
+        new Embedder({
+          apiKey: apiKeyMap.get('openai') ?? process.env.OPENAI_API_KEY,
+        }),
+      )
+    : null;
+
   const memoryRetriever = new MemoryRetriever(supabaseAdmin);
   const budgetAllocator = new BudgetAllocator();
   const stateTracker = new StateTracker();
@@ -192,7 +206,11 @@ export async function createGameEngineForSession(
   );
 
   // 4. ContextManager + GameEngine 조립
-  const contextManager = new ContextManager(memoryHierarchy, supabaseAdmin);
+  const contextManager = new ContextManager(
+    memoryHierarchy,
+    supabaseAdmin,
+    ruleRetriever ?? undefined,
+  );
   const diceEngine = new DiceEngine();
 
   return new GameEngine(contextManager, llmWrapper, diceEngine, memoryHierarchy, null);

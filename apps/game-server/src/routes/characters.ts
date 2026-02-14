@@ -23,23 +23,25 @@ router.post(
       const { sessionId } = req.params;
       const userId = req.user!.id;
 
-      // 세션 존재 확인
+      // 세션 존재 확인 (soft-delete 제외)
       const { data: session } = await supabaseAdmin
         .from('game_sessions')
         .select('id, status')
         .eq('id', sessionId)
+        .is('deleted_at', null)
         .single();
 
       if (!session) {
         throw new AppError(404, '세션을 찾을 수 없습니다.');
       }
 
-      // 참가자 확인
+      // 참가자 확인 (soft-delete 제외)
       const { data: participant } = await supabaseAdmin
         .from('session_participants')
         .select('id, character_id')
         .eq('session_id', sessionId)
         .eq('user_id', userId)
+        .is('deleted_at', null)
         .single();
 
       if (!participant) {
@@ -100,10 +102,12 @@ router.get(
       // 참가자 확인 (IDOR 방지: 참가자만 세션 캐릭터 목록 조회 가능)
       await assertSessionParticipant(sessionId as string, userId);
 
+      // soft-delete 제외
       const { data: characters, error } = await supabaseAdmin
         .from('characters')
         .select('*')
         .eq('session_id', sessionId)
+        .is('deleted_at', null)
         .order('created_at', { ascending: true });
 
       if (error) {
@@ -138,11 +142,12 @@ router.patch('/characters/:id', async (req: Request, res: Response, next: NextFu
     const { id } = req.params;
     const userId = req.user!.id;
 
-    // 본인 캐릭터 확인
+    // 본인 캐릭터 확인 (soft-delete 제외)
     const { data: character } = await supabaseAdmin
       .from('characters')
       .select('user_id')
       .eq('id', id)
+      .is('deleted_at', null)
       .single();
 
     if (!character) {
@@ -165,10 +170,12 @@ router.patch('/characters/:id', async (req: Request, res: Response, next: NextFu
       updatePayload.hit_points = hitPoints;
     }
 
+    // soft-delete된 캐릭터에 대한 수정 방지
     const { data: updated, error } = await supabaseAdmin
       .from('characters')
       .update(updatePayload)
       .eq('id', id)
+      .is('deleted_at', null)
       .select()
       .single();
 
@@ -188,10 +195,12 @@ router.get('/characters/:id', async (req: Request, res: Response, next: NextFunc
     const { id } = req.params;
     const userId = req.user!.id;
 
+    // soft-delete 제외
     const { data: character, error } = await supabaseAdmin
       .from('characters')
       .select('*')
       .eq('id', id)
+      .is('deleted_at', null)
       .single();
 
     if (error || !character) {

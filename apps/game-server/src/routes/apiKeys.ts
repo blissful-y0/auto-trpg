@@ -18,6 +18,39 @@ const providerParamSchema = z.object({
   provider: z.enum(['claude', 'openai', 'gemini']),
 });
 
+// 프로바이더별 API 키 간단 검증
+async function quickValidate(
+  provider: string,
+  apiKey: string,
+): Promise<{ isValid: boolean; message: string }> {
+  try {
+    if (provider === 'openai') {
+      const { default: OpenAI } = await import('openai');
+      const client = new OpenAI({ apiKey });
+      await client.models.list();
+      return { isValid: true, message: 'API 키가 유효합니다.' };
+    } else if (provider === 'claude') {
+      const { default: Anthropic } = await import('@anthropic-ai/sdk');
+      const client = new Anthropic({ apiKey });
+      await client.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 1,
+        messages: [{ role: 'user', content: 'test' }],
+      });
+      return { isValid: true, message: 'API 키가 유효합니다.' };
+    } else if (provider === 'gemini') {
+      const { GoogleGenerativeAI } = await import('@google/generative-ai');
+      const genAI = new GoogleGenerativeAI(apiKey);
+      const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+      await model.generateContent('test');
+      return { isValid: true, message: 'API 키가 유효합니다.' };
+    }
+    return { isValid: false, message: '지원하지 않는 프로바이더입니다.' };
+  } catch {
+    return { isValid: false, message: 'API 키가 유효하지 않습니다.' };
+  }
+}
+
 const MODEL_LIST_CACHE_TTL_MS = 60_000;
 const modelListCache = new Map<string, { expiresAt: number; data: ProviderModelCatalog }>();
 
@@ -37,16 +70,20 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
 
     const { provider, apiKey } = parsed.data;
 
-    // 기존 키가 있으면 업데이트
+    // 기존 키가 있으면 업데이트 (soft-delete 제외)
     const { data: existing } = await supabaseAdmin
       .from('user_api_keys')
       .select('id')
       .eq('user_id', userId)
       .eq('provider', provider)
+      .is('deleted_at', null)
       .single();
 
     const encrypted = encrypt(apiKey);
     const keyHint = createKeyHint(apiKey);
+
+    let keyRecord: any;
+    let statusCode = 200;
 
     if (existing) {
       const { data: updated, error } = await supabaseAdmin
@@ -65,8 +102,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
       if (error) {
         throw new AppError(500, `API 키 업데이트 실패: ${error.message}`);
       }
-
-      res.json({ data: updated });
+      keyRecord = updated;
     } else {
       const { data: created, error } = await supabaseAdmin
         .from('user_api_keys')
@@ -84,9 +120,24 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
       if (error) {
         throw new AppError(500, `API 키 등록 실패: ${error.message}`);
       }
-
-      res.status(201).json({ data: created });
+      keyRecord = created;
+      statusCode = 201;
     }
+
+    // 등록 후 자동 검증
+    let autoValidation = { isValid: false, message: '자동 검증 실패' };
+    try {
+      autoValidation = await quickValidate(provider, apiKey);
+      await supabaseAdmin
+        .from('user_api_keys')
+        .update({ is_valid: autoValidation.isValid })
+        .eq('id', keyRecord.id);
+      keyRecord.is_valid = autoValidation.isValid;
+    } catch {
+      // 자동 검증 실패해도 등록 자체는 성공으로 처리
+    }
+
+    res.status(statusCode).json({ data: { ...keyRecord, autoValidation } });
   } catch (err) {
     next(err);
   }
@@ -97,10 +148,12 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const userId = req.user!.id;
 
+    // soft-delete 제외
     const { data: keys, error } = await supabaseAdmin
       .from('user_api_keys')
       .select('id, provider, key_hint, is_valid, created_at, updated_at')
       .eq('user_id', userId)
+      .is('deleted_at', null)
       .order('provider', { ascending: true });
 
     if (error) {
@@ -131,11 +184,13 @@ router.get('/:provider/models', async (req: Request, res: Response, next: NextFu
       return;
     }
 
+    // soft-delete 제외
     const { data: keyRecord } = await supabaseAdmin
       .from('user_api_keys')
       .select('encrypted_key, iv, auth_tag')
       .eq('user_id', userId)
       .eq('provider', provider)
+      .is('deleted_at', null)
       .single();
 
     if (!keyRecord) {
@@ -162,11 +217,13 @@ router.delete('/:provider', async (req: Request, res: Response, next: NextFuncti
     const userId = req.user!.id;
     const { provider } = req.params;
 
+    // soft delete (이미 삭제된 키 제외)
     const { error } = await supabaseAdmin
       .from('user_api_keys')
-      .delete()
+      .update({ deleted_at: new Date().toISOString() })
       .eq('user_id', userId)
-      .eq('provider', provider);
+      .eq('provider', provider)
+      .is('deleted_at', null);
 
     if (error) {
       throw new AppError(500, `API 키 삭제 실패: ${error.message}`);
@@ -188,59 +245,28 @@ router.post('/:provider/validate', async (req: Request, res: Response, next: Nex
     }
     const provider = parsed.data.provider;
 
-    // 저장된 키 조회
+    // 저장된 키 조회 (soft-delete 제외)
     const { data: keyRecord } = await supabaseAdmin
       .from('user_api_keys')
       .select('id, encrypted_key, iv, auth_tag')
       .eq('user_id', userId)
       .eq('provider', provider)
+      .is('deleted_at', null)
       .single();
 
     if (!keyRecord) {
       throw new AppError(404, `${provider} API 키가 등록되지 않았습니다.`);
     }
 
-    // 키 복호화
+    // 키 복호화 후 quickValidate로 검증
     const apiKey = decrypt(keyRecord.encrypted_key, keyRecord.iv, keyRecord.auth_tag);
-    let isValid = false;
-
-    // 프로바이더별 검증 (간단한 API 호출)
-    try {
-      if (provider === 'openai') {
-        const { default: OpenAI } = await import('openai');
-        const client = new OpenAI({ apiKey });
-        await client.models.list();
-        isValid = true;
-      } else if (provider === 'claude') {
-        const { default: Anthropic } = await import('@anthropic-ai/sdk');
-        const client = new Anthropic({ apiKey });
-        // 간단한 메시지 전송으로 검증
-        await client.messages.create({
-          model: 'claude-haiku-4-5-20251001',
-          max_tokens: 1,
-          messages: [{ role: 'user', content: 'test' }],
-        });
-        isValid = true;
-      } else if (provider === 'gemini') {
-        const { GoogleGenerativeAI } = await import('@google/generative-ai');
-        const genAI = new GoogleGenerativeAI(apiKey);
-        const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
-        await model.generateContent('test');
-        isValid = true;
-      }
-    } catch {
-      isValid = false;
-    }
+    const { isValid, message } = await quickValidate(provider, apiKey);
 
     // 검증 결과 저장
     await supabaseAdmin.from('user_api_keys').update({ is_valid: isValid }).eq('id', keyRecord.id);
 
     res.json({
-      data: {
-        provider,
-        isValid,
-        message: isValid ? 'API 키가 유효합니다.' : 'API 키가 유효하지 않습니다.',
-      },
+      data: { provider, isValid, message },
     });
   } catch (err) {
     next(err);

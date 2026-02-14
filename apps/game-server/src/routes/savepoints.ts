@@ -97,11 +97,12 @@ router.delete(
       const { id: sessionId, savePointId } = req.params;
       const userId = req.user!.id;
 
-      // 세션 생성자만 삭제 가능
+      // 세션 생성자만 삭제 가능 (soft-delete 제외)
       const { data: session } = await supabaseAdmin
         .from('game_sessions')
         .select('created_by')
         .eq('id', sessionId)
+        .is('deleted_at', null)
         .single();
 
       if (!session) {
@@ -128,11 +129,12 @@ router.put('/:id/pause', async (req: Request<SessionParams>, res: Response, next
     const { id: sessionId } = req.params;
     const userId = req.user!.id;
 
-    // 세션 생성자(GM)만 일시정지 가능
+    // 세션 생성자(GM)만 일시정지 가능 (soft-delete 제외)
     const { data: session } = await supabaseAdmin
       .from('game_sessions')
       .select('created_by, status')
       .eq('id', sessionId)
+      .is('deleted_at', null)
       .single();
 
     if (!session) {
@@ -150,11 +152,12 @@ router.put('/:id/pause', async (req: Request<SessionParams>, res: Response, next
     // 일시정지 세이브포인트 생성
     const saveResult = await saveManager.savePause(sessionId, userId);
 
-    // 세션 상태 변경
+    // 세션 상태 변경 (soft-delete된 세션 제외)
     await supabaseAdmin
       .from('game_sessions')
       .update({ status: 'paused', updated_at: new Date().toISOString() })
-      .eq('id', sessionId);
+      .eq('id', sessionId)
+      .is('deleted_at', null);
 
     // Redis 상태 flush (데이터 보존)
     await persistenceManager.flushSession(sessionId);
@@ -185,11 +188,12 @@ router.put('/:id/resume', async (req: Request<SessionParams>, res: Response, nex
     const { id: sessionId } = req.params;
     const userId = req.user!.id;
 
-    // 세션 생성자(GM)만 재개 가능
+    // 세션 생성자(GM)만 재개 가능 (soft-delete 제외)
     const { data: session } = await supabaseAdmin
       .from('game_sessions')
       .select('created_by, status')
       .eq('id', sessionId)
+      .is('deleted_at', null)
       .single();
 
     if (!session) {
@@ -204,11 +208,12 @@ router.put('/:id/resume', async (req: Request<SessionParams>, res: Response, nex
       throw new AppError(400, '일시정지 상태인 세션만 재개할 수 있습니다.');
     }
 
-    // 세션 상태 변경
+    // 세션 상태 변경 (soft-delete된 세션 제외)
     await supabaseAdmin
       .from('game_sessions')
       .update({ status: 'active', updated_at: new Date().toISOString() })
-      .eq('id', sessionId);
+      .eq('id', sessionId)
+      .is('deleted_at', null);
 
     // Supabase → Redis 재로드
     await persistenceManager.loadSession(sessionId);
