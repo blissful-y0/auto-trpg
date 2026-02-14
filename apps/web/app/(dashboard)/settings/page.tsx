@@ -16,7 +16,7 @@ import {
   Edit3,
   Lock,
 } from 'lucide-react';
-import { settingsApi } from '@/lib/api';
+import { ApiError, settingsApi } from '@/lib/api';
 
 interface ApiKey {
   id: string;
@@ -104,6 +104,30 @@ function mapApiKeysFromBackend(keys: any[]): ApiKey[] {
   }));
 }
 
+const apiKeyErrorMessages: Record<string, string> = {
+  KEY_NOT_FOUND: '해당 프로바이더 키가 등록되지 않았습니다. 키를 먼저 등록해 주세요.',
+  NO_PREVIOUS_KEY: '복구 가능한 이전 키가 없습니다. 회전 이력이 없거나 이미 롤백되었을 수 있습니다.',
+  INVALID_KEY: '입력한 키가 유효하지 않습니다. 권한/형식을 다시 확인해 주세요.',
+  SERVICE_UNAVAILABLE:
+    '현재 키 검증/조회 서비스에 일시적으로 문제가 있습니다. 잠시 후 다시 시도해 주세요.',
+  MODEL_LIST_ERROR: '현재 모델 목록을 조회하지 못합니다. 잠시 후 다시 시도해 주세요.',
+};
+
+const toApiKeyMessage = (err: unknown, fallback: string): string => {
+  if (err instanceof ApiError) {
+    if (err.code && apiKeyErrorMessages[err.code]) {
+      return apiKeyErrorMessages[err.code];
+    }
+    return err.message || fallback;
+  }
+
+  if (err instanceof Error) {
+    return err.message || fallback;
+  }
+
+  return fallback;
+};
+
 export default function SettingsPage() {
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
   const [loading, setLoading] = useState(true);
@@ -153,7 +177,7 @@ export default function SettingsPage() {
       setModelSource(null);
       setProviderModels([]);
       if (!silent) {
-        toast.error(err.message || '모델 목록을 불러오지 못했습니다');
+        toast.error(toApiKeyMessage(err, '모델 목록을 불러오지 못했습니다'));
       }
     } finally {
       setLoadingModels(false);
@@ -199,7 +223,10 @@ export default function SettingsPage() {
       }
       await loadKeys();
     } catch (err: any) {
-      const msg = err.message || (isRotate ? 'API 키 회전에 실패했습니다' : 'API 키 등록에 실패했습니다');
+      const msg = toApiKeyMessage(
+        err,
+        isRotate ? 'API 키 회전에 실패했습니다' : 'API 키 등록에 실패했습니다',
+      );
       toast.error(msg);
     } finally {
       setSaving(false);
@@ -219,7 +246,7 @@ export default function SettingsPage() {
       }
       await loadKeys();
     } catch (err: any) {
-      const msg = err.message || 'API 키 롤백에 실패했습니다';
+      const msg = toApiKeyMessage(err, 'API 키 롤백에 실패했습니다');
       toast.error(msg);
     } finally {
       setRollingBack(null);
@@ -234,7 +261,7 @@ export default function SettingsPage() {
       setApiKeys(apiKeys.filter((k) => k.id !== key.id));
       toast.success(`${providerConfig[key.provider]?.name || key.provider} 키가 삭제되었습니다`);
     } catch (err: any) {
-      toast.error(err.message || 'API 키 삭제에 실패했습니다');
+      toast.error(toApiKeyMessage(err, 'API 키 삭제에 실패했습니다'));
     } finally {
       setDeleting(null);
     }
@@ -250,11 +277,12 @@ export default function SettingsPage() {
       if (isValid) {
         toast.success('API 키가 유효합니다');
       } else {
-        toast.error('API 키가 유효하지 않습니다');
+        const message = (res as any)?.data?.message;
+        toast.error(message || 'API 키가 유효하지 않습니다');
       }
     } catch (err: any) {
       setApiKeys(apiKeys.map((k) => (k.id === key.id ? { ...k, isValid: false } : k)));
-      toast.error(err.message || '검증에 실패했습니다');
+      toast.error(toApiKeyMessage(err, '검증에 실패했습니다'));
     } finally {
       setValidating(null);
     }

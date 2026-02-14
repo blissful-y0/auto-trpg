@@ -4,11 +4,13 @@ import { Request, Response, NextFunction } from 'express';
 export class AppError extends Error {
   public readonly statusCode: number;
   public readonly isOperational: boolean;
+  public readonly errorCode?: string;
 
-  constructor(statusCode: number, message: string, isOperational = true) {
+  constructor(statusCode: number, message: string, isOperational = true, errorCode?: string) {
     super(message);
     this.statusCode = statusCode;
     this.isOperational = isOperational;
+    this.errorCode = errorCode;
     Object.setPrototypeOf(this, AppError.prototype);
   }
 }
@@ -24,6 +26,7 @@ export function errorHandler(
     res.status(err.statusCode).json({
       status: 'error',
       message: err.message,
+      ...(err.errorCode ? { code: err.errorCode } : {}),
       ...(process.env.NODE_ENV !== 'production' && { stack: err.stack }),
     });
     return;
