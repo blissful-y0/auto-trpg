@@ -21,8 +21,10 @@ export default function AuthCallbackPage() {
     const code = searchParams.get('code');
     const error = searchParams.get('error');
     const errorDescription = searchParams.get('error_description');
+    // open redirect 방지 — 허용된 경로 접두사만 통과
     const nextPath = searchParams.get('next') ?? '/dashboard';
-    const redirectTo = nextPath.startsWith('/') && !nextPath.startsWith('//')
+    const ALLOWED_PREFIXES = ['/dashboard', '/session', '/settings', '/rulebooks', '/campaigns'];
+    const redirectTo = ALLOWED_PREFIXES.some((p) => nextPath === p || nextPath.startsWith(p + '/'))
       ? nextPath
       : '/dashboard';
 

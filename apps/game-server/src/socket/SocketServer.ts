@@ -77,6 +77,8 @@ export function createSocketServer(httpServer: HTTPServer): TypedSocketServer {
 
     socket.on('disconnect', (reason) => {
       console.log(`소켓 연결 종료: ${socket.id} (이유: ${reason})`);
+      // 쓰로틀 상태 정리 (메모리 누수 방지)
+      socketThrottle.clearUser(socket.data.user.userId);
     });
   });
 
