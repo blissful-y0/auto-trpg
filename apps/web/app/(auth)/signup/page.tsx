@@ -5,7 +5,9 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { toast } from 'sonner';
 import { createClient } from '@/lib/supabase/client';
-import { Loader2, Mail, Lock, User } from 'lucide-react';
+import { Github, Loader2, Mail, Lock, User, AlertCircle } from 'lucide-react';
+
+type OAuthProvider = 'google' | 'github';
 
 export default function SignupPage() {
   const [email, setEmail] = useState('');
@@ -13,14 +15,17 @@ export default function SignupPage() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [nickname, setNickname] = useState('');
   const [loading, setLoading] = useState(false);
+  const [oauthLoading, setOauthLoading] = useState<OAuthProvider | null>(null);
   const router = useRouter();
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
+
     if (password !== confirmPassword) {
       toast.error('비밀번호가 일치하지 않습니다');
       return;
     }
+
     setLoading(true);
 
     try {
@@ -30,6 +35,7 @@ export default function SignupPage() {
         password,
         options: {
           data: { display_name: nickname },
+          emailRedirectTo: `${window.location.origin}/auth/callback`,
         },
       });
 
@@ -46,6 +52,28 @@ export default function SignupPage() {
 
     toast.success('회원가입이 완료되었습니다');
     router.push('/dashboard');
+  };
+
+  const handleOAuth = async (provider: OAuthProvider) => {
+    setOauthLoading(provider);
+
+    try {
+      const supabase = createClient();
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider,
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback`,
+        },
+      });
+
+      if (error) {
+        toast.error(error.message);
+        setOauthLoading(null);
+      }
+    } catch {
+      toast.error('OAuth 회원가입/로그인 요청을 시작할 수 없습니다.');
+      setOauthLoading(null);
+    }
   };
 
   return (
@@ -129,7 +157,7 @@ export default function SignupPage() {
 
         <button
           type="submit"
-          disabled={loading}
+          disabled={loading || oauthLoading !== null}
           className="btn-primary w-full py-2.5 disabled:opacity-50 flex items-center justify-center gap-2"
         >
           {loading ? (
@@ -142,6 +170,54 @@ export default function SignupPage() {
           )}
         </button>
       </form>
+
+      <div className="mt-5">
+        <div className="relative mb-4">
+          <div className="border-t border-line" />
+          <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-bg-surface px-3 text-xs text-text-tertiary">
+            또는 소셜 회원가입
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 gap-2">
+          <button
+            type="button"
+            onClick={() => handleOAuth('google')}
+            disabled={loading || oauthLoading !== null}
+            className="btn-primary w-full py-2.5 bg-bg-overlay text-text-secondary border border-line hover:bg-bg-elevated flex items-center justify-center gap-2"
+          >
+            {oauthLoading === 'google' ? (
+              <>
+                <Loader2 size={16} className="animate-spin" />
+                연결 중...
+              </>
+            ) : (
+              <>
+                <AlertCircle size={16} />
+                Google로 계속하기
+              </>
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={() => handleOAuth('github')}
+            disabled={loading || oauthLoading !== null}
+            className="btn-primary w-full py-2.5 bg-bg-overlay text-text-secondary border border-line hover:bg-bg-elevated flex items-center justify-center gap-2"
+          >
+            {oauthLoading === 'github' ? (
+              <>
+                <Loader2 size={16} className="animate-spin" />
+                연결 중...
+              </>
+            ) : (
+              <>
+                <Github size={16} />
+                GitHub로 계속하기
+              </>
+            )}
+          </button>
+        </div>
+      </div>
 
       <p className="mt-6 text-center text-body-sm text-text-secondary">
         이미 계정이 있으신가요?{' '}

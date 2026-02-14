@@ -58,3 +58,17 @@ functions/*/.build/
 # Claude Code
 .claude/
 .serena/
+
+# Analysis docs (auto-generated)
+API_KEY_*.md
+AUTH_MIGRATION_AUDIT.md
+CREDENTIAL_*.md
+DB_COLUMN_USAGE_*.md
+KEYMANAGER_*.md
+OAUTH_INTEGRATION_PLAN.md
+README_API_KEY_SCAN.md
+README_CREDENTIAL_MAPPING.md
+SCAN_SUMMARY.md
+
+# Worktrees
+.worktrees/
