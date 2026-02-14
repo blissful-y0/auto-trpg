@@ -4,6 +4,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { MemoryHierarchy } from '../memory/MemoryHierarchy';
 import type { BudgetProfile } from '../memory/types';
+import type { RuleRetriever } from '../rag/retriever';
 
 // LLM 메시지 타입
 export interface LLMMessage {
@@ -110,9 +111,17 @@ export class ContextManager {
   // DB 클라이언트 (optional — 없으면 인메모리 폴백)
   private supabaseClient?: SupabaseClient;
 
-  constructor(memoryHierarchy?: MemoryHierarchy | null, supabaseClient?: SupabaseClient) {
+  // 규칙 검색기 (optional)
+  private ruleRetriever?: RuleRetriever;
+
+  constructor(
+    memoryHierarchy?: MemoryHierarchy | null,
+    supabaseClient?: SupabaseClient,
+    ruleRetriever?: RuleRetriever,
+  ) {
     this.memoryHierarchy = memoryHierarchy;
     this.supabaseClient = supabaseClient;
+    this.ruleRetriever = ruleRetriever;
   }
 
   // LLM 프롬프트 조립 (핵심)
@@ -197,10 +206,45 @@ export class ContextManager {
 - 규칙서: ${session.rulebookIds.join(', ')}`;
   }
 
-  // 규칙 검색 (RAG 스텁 — 추후 RAG 파이프라인 연동)
-  async getRelevantRules(_action: string, _rulebookIds: string[]): Promise<string> {
-    // TODO: RAG 파이프라인 연동 후 실제 규칙 검색
-    return '';
+  // 규칙 검색 (RAG 조회)
+  async getRelevantRules(action: string, rulebookIds: string[]): Promise<string> {
+    if (!this.ruleRetriever || !action.trim() || rulebookIds.length === 0) {
+      return '';
+    }
+
+    try {
+      const { results, chained } = await this.ruleRetriever.searchEnhanced(
+        action,
+        {
+          rulebookIds,
+          limit: 4,
+          similarityThreshold: 0.3,
+          enableReranking: false,
+          enableChaining: false,
+        },
+        { sessionId: 'n/a', rulebookIds },
+      );
+
+      const lines = results
+        .map((result, index) => {
+          const page = typeof result.page === 'number' ? ` p.${result.page}` : '';
+          return `${index + 1}. [${result.category}]${page} ${result.content}`;
+        })
+        .filter((line) => line.length > 0);
+
+      const chainedLines = chained.map(
+        (chain, index) =>
+          `${lines.length + index + 1}. [연결규칙] ${chain.chainReason}: ${chain.result.content}`,
+      );
+
+      return [...lines, ...chainedLines].join('\n');
+    } catch (error) {
+      console.error(
+        '[ContextManager] 규칙 검색 실패:',
+        error instanceof Error ? error.message : '알 수 없는 오류',
+      );
+      return '';
+    }
   }
 
   // 캐릭터 정보를 프롬프트 형태로 변환

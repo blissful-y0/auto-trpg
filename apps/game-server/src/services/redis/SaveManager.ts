@@ -322,12 +322,13 @@ export class SaveManager {
   }
 
   private async pruneAutoSaves(sessionId: string): Promise<void> {
-    // 자동 세이브만 날짜 내림차순으로 조회
+    // 자동 세이브만 날짜 내림차순으로 조회 (소프트 삭제된 세이브 제외)
     const { data: autoSaves } = await this.supabase
       .from('save_points')
       .select('id')
       .eq('session_id', sessionId)
       .eq('save_type', 'auto')
+      .is('deleted_at', null)
       .order('created_at', { ascending: false });
 
     if (!autoSaves || autoSaves.length <= MAX_AUTO_SAVES) return;
@@ -340,7 +341,7 @@ export class SaveManager {
     if (toDelete.length > 0) {
       await this.supabase
         .from('save_points')
-        .delete()
+        .update({ deleted_at: new Date().toISOString() })
         .in('id', toDelete);
 
       console.log(`[SaveManager] 오래된 자동 세이브 ${toDelete.length}개 정리 (${sessionId})`);
@@ -365,12 +366,13 @@ export class SaveManager {
   async load(sessionId: string, savePointId: string): Promise<SavePointSnapshot> {
     await this.acquireLock(sessionId);
     try {
-      // 세이브포인트 조회
+      // 세이브포인트 조회 (소프트 삭제된 세이브 제외)
       const { data, error } = await this.supabase
         .from('save_points')
         .select('*')
         .eq('id', savePointId)
         .eq('session_id', sessionId)
+        .is('deleted_at', null)
         .single();
 
       if (error || !data) {
@@ -492,10 +494,12 @@ export class SaveManager {
   // ─── 세이브포인트 조회 ──────────────────────────────
 
   async listSavePoints(sessionId: string): Promise<SavePointSummary[]> {
+    // 소프트 삭제된 세이브 제외
     const { data, error } = await this.supabase
       .from('save_points')
       .select('id, session_id, save_type, name, scene_number, character_count, created_by, created_at')
       .eq('session_id', sessionId)
+      .is('deleted_at', null)
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -515,10 +519,12 @@ export class SaveManager {
   }
 
   async getSavePoint(savePointId: string): Promise<SavePointFull | null> {
+    // 소프트 삭제된 세이브 제외
     const { data, error } = await this.supabase
       .from('save_points')
       .select('*')
       .eq('id', savePointId)
+      .is('deleted_at', null)
       .single();
 
     if (error || !data) return null;
@@ -541,7 +547,7 @@ export class SaveManager {
   async deleteSavePoint(savePointId: string, sessionId: string): Promise<void> {
     const { error } = await this.supabase
       .from('save_points')
-      .delete()
+      .update({ deleted_at: new Date().toISOString() })
       .eq('id', savePointId)
       .eq('session_id', sessionId);
 

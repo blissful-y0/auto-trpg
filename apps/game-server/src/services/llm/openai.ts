@@ -12,6 +12,7 @@ import type {
   LLMStreamChunk,
   LLMToolResponse,
 } from './provider';
+import { withRetry } from './retry';
 
 /** 기본 OpenAI 모델 */
 const DEFAULT_MODEL = 'gpt-4o';
@@ -27,59 +28,79 @@ export class OpenAIProvider implements LLMProvider {
   async generateText(request: LLMRequest): Promise<LLMResponse> {
     const messages = this.convertMessages(request);
 
-    const response = await this.client.chat.completions.create({
-      model: request.model ?? DEFAULT_MODEL,
-      max_tokens: request.maxTokens ?? 4096,
-      temperature: request.temperature ?? 0.7,
-      messages,
-    });
+    return withRetry(
+      async () => {
+        const response = await this.client.chat.completions.create({
+          model: request.model ?? DEFAULT_MODEL,
+          max_tokens: request.maxTokens ?? 4096,
+          temperature: request.temperature ?? 0.7,
+          messages,
+        });
 
-    const choice = response.choices[0];
+        const choice = response.choices[0];
 
-    return {
-      content: choice?.message?.content ?? '',
-      model: response.model,
-      usage: {
-        promptTokens: response.usage?.prompt_tokens ?? 0,
-        completionTokens: response.usage?.completion_tokens ?? 0,
-        totalTokens: response.usage?.total_tokens ?? 0,
+        return {
+          content: choice?.message?.content ?? '',
+          model: response.model,
+          usage: {
+            promptTokens: response.usage?.prompt_tokens ?? 0,
+            completionTokens: response.usage?.completion_tokens ?? 0,
+            totalTokens: response.usage?.total_tokens ?? 0,
+          },
+          finishReason: choice?.finish_reason ?? 'unknown',
+        };
       },
-      finishReason: choice?.finish_reason ?? 'unknown',
-    };
+      'OpenAI',
+      'generateText',
+    );
   }
 
   async *generateStream(request: LLMRequest): AsyncGenerator<LLMStreamChunk> {
     const messages = this.convertMessages(request);
 
-    const stream = await this.client.chat.completions.create({
-      model: request.model ?? DEFAULT_MODEL,
-      max_tokens: request.maxTokens ?? 4096,
-      temperature: request.temperature ?? 0.7,
-      messages,
-      stream: true,
-      stream_options: { include_usage: true },
-    });
+    // 스트림 생성을 재시도 (생성 시점의 네트워크/rate limit 에러 대응)
+    const stream = await withRetry(
+      async () =>
+        this.client.chat.completions.create({
+          model: request.model ?? DEFAULT_MODEL,
+          max_tokens: request.maxTokens ?? 4096,
+          temperature: request.temperature ?? 0.7,
+          messages,
+          stream: true,
+          stream_options: { include_usage: true },
+        }),
+      'OpenAI',
+      'generateStream(create)',
+    );
 
-    for await (const chunk of stream) {
-      const delta = chunk.choices[0]?.delta;
-      const content = delta?.content ?? '';
+    try {
+      for await (const chunk of stream) {
+        const delta = chunk.choices[0]?.delta;
+        const content = delta?.content ?? '';
 
-      if (content) {
-        yield { content, done: false };
+        if (content) {
+          yield { content, done: false };
+        }
+
+        // 마지막 청크에 usage 정보 포함
+        if (chunk.usage) {
+          yield {
+            content: '',
+            done: true,
+            usage: {
+              promptTokens: chunk.usage.prompt_tokens,
+              completionTokens: chunk.usage.completion_tokens,
+              totalTokens: chunk.usage.total_tokens,
+            },
+          };
+        }
       }
-
-      // 마지막 청크에 usage 정보 포함
-      if (chunk.usage) {
-        yield {
-          content: '',
-          done: true,
-          usage: {
-            promptTokens: chunk.usage.prompt_tokens,
-            completionTokens: chunk.usage.completion_tokens,
-            totalTokens: chunk.usage.total_tokens,
-          },
-        };
-      }
+    } catch (error) {
+      console.error(
+        '[OpenAI] generateStream 스트림 읽기 중 에러:',
+        error instanceof Error ? error.message : error,
+      );
+      yield { content: '', done: true };
     }
   }
 
@@ -98,50 +119,62 @@ export class OpenAIProvider implements LLMProvider {
       }),
     );
 
-    const response = await this.client.chat.completions.create({
-      model: request.model ?? DEFAULT_MODEL,
-      max_tokens: request.maxTokens ?? 4096,
-      temperature: request.temperature ?? 0.7,
-      messages,
-      tools: tools.length > 0 ? tools : undefined,
-      tool_choice: tools.length > 0 && request.toolChoice === 'required' ? 'required' : undefined,
-    });
+    return withRetry(
+      async () => {
+        const response = await this.client.chat.completions.create({
+          model: request.model ?? DEFAULT_MODEL,
+          max_tokens: request.maxTokens ?? 4096,
+          temperature: request.temperature ?? 0.7,
+          messages,
+          tools: tools.length > 0 ? tools : undefined,
+          tool_choice: tools.length > 0 && request.toolChoice === 'required' ? 'required' : undefined,
+        });
 
-    const choice = response.choices[0];
-    const toolCalls = (choice?.message?.tool_calls ?? []).map((tc) => ({
-      id: tc.id,
-      name: tc.function.name,
-      arguments: JSON.parse(tc.function.arguments) as Record<string, unknown>,
-    }));
+        const choice = response.choices[0];
+        const toolCalls = (choice?.message?.tool_calls ?? []).map((tc) => ({
+          id: tc.id,
+          name: tc.function.name,
+          arguments: JSON.parse(tc.function.arguments) as Record<string, unknown>,
+        }));
 
-    return {
-      content: choice?.message?.content ?? '',
-      toolCalls,
-      model: response.model,
-      usage: {
-        promptTokens: response.usage?.prompt_tokens ?? 0,
-        completionTokens: response.usage?.completion_tokens ?? 0,
-        totalTokens: response.usage?.total_tokens ?? 0,
+        return {
+          content: choice?.message?.content ?? '',
+          toolCalls,
+          model: response.model,
+          usage: {
+            promptTokens: response.usage?.prompt_tokens ?? 0,
+            completionTokens: response.usage?.completion_tokens ?? 0,
+            totalTokens: response.usage?.total_tokens ?? 0,
+          },
+          finishReason: choice?.finish_reason ?? 'unknown',
+        };
       },
-      finishReason: choice?.finish_reason ?? 'unknown',
-    };
+      'OpenAI',
+      'generateWithTools',
+    );
   }
 
 
   async generateEmbedding(text: string, model?: string): Promise<{ embedding: number[]; usage: { promptTokens: number; completionTokens: number; totalTokens: number } }> {
-    const response = await this.client.embeddings.create({
-      model: model ?? 'text-embedding-3-small',
-      input: text,
-    });
+    return withRetry(
+      async () => {
+        const response = await this.client.embeddings.create({
+          model: model ?? 'text-embedding-3-small',
+          input: text,
+        });
 
-    return {
-      embedding: response.data[0].embedding,
-      usage: {
-        promptTokens: response.usage.prompt_tokens,
-        completionTokens: 0,
-        totalTokens: response.usage.total_tokens,
+        return {
+          embedding: response.data[0].embedding,
+          usage: {
+            promptTokens: response.usage.prompt_tokens,
+            completionTokens: 0,
+            totalTokens: response.usage.total_tokens,
+          },
+        };
       },
-    };
+      'OpenAI',
+      'generateEmbedding',
+    );
   }
 
   countTokens(text: string): number {

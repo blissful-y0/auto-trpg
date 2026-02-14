@@ -100,11 +100,12 @@ router.post('/:id/process', async (req: Request, res: Response, next: NextFuncti
     const { id } = req.params;
     const userId = req.user!.id;
 
-    // 규칙서 소유자 확인
+    // 규칙서 소유자 확인 (soft-delete 제외)
     const { data: rulebook } = await supabaseAdmin
       .from('rulebooks')
       .select('id, user_id, status')
       .eq('id', id)
+      .is('deleted_at', null)
       .single();
 
     if (!rulebook) {
@@ -119,7 +120,7 @@ router.post('/:id/process', async (req: Request, res: Response, next: NextFuncti
       throw new AppError(400, `현재 상태(${rulebook.status})에서는 처리를 시작할 수 없습니다.`);
     }
 
-    // 상태를 processing으로 변경
+    // 상태를 processing으로 변경 (soft-delete된 레코드 제외)
     const { data: updated, error } = await supabaseAdmin
       .from('rulebooks')
       .update({
@@ -129,6 +130,7 @@ router.post('/:id/process', async (req: Request, res: Response, next: NextFuncti
         updated_at: new Date().toISOString(),
       })
       .eq('id', id)
+      .is('deleted_at', null)
       .select()
       .single();
 
@@ -152,10 +154,12 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const userId = req.user!.id;
 
+    // soft-delete 제외
     const { data: rulebooks, error } = await supabaseAdmin
       .from('rulebooks')
       .select('*')
       .eq('user_id', userId)
+      .is('deleted_at', null)
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -177,10 +181,12 @@ router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
     // 접근 권한 확인 (IDOR 방지: 소유자 또는 연결된 세션 참가자만 조회 가능)
     await assertRulebookAccess(id as string, userId);
 
+    // soft-delete 제외
     const { data: rulebook, error } = await supabaseAdmin
       .from('rulebooks')
       .select('*')
       .eq('id', id)
+      .is('deleted_at', null)
       .single();
 
     if (error || !rulebook) {
@@ -210,11 +216,12 @@ router.delete('/:id', async (req: Request, res: Response, next: NextFunction) =>
     const { id } = req.params;
     const userId = req.user!.id;
 
-    // 소유자 확인
+    // 소유자 확인 (soft-delete 제외)
     const { data: rulebook } = await supabaseAdmin
       .from('rulebooks')
       .select('id, user_id')
       .eq('id', id)
+      .is('deleted_at', null)
       .single();
 
     if (!rulebook) {
@@ -225,20 +232,16 @@ router.delete('/:id', async (req: Request, res: Response, next: NextFunction) =>
       throw new AppError(403, '본인의 규칙서만 삭제할 수 있습니다.');
     }
 
-    // 관련 청크 삭제
-    await supabaseAdmin.from('rulebook_chunks').delete().eq('rulebook_id', id);
-
-    // 세션 연결 삭제
-    await supabaseAdmin.from('session_rulebooks').delete().eq('rulebook_id', id);
-
-    // 규칙서 삭제
-    const { error } = await supabaseAdmin.from('rulebooks').delete().eq('id', id);
+    // soft delete (규칙서 + 연관 데이터는 보존, 이미 삭제된 레코드 제외)
+    const { error } = await supabaseAdmin
+      .from('rulebooks')
+      .update({ deleted_at: new Date().toISOString() })
+      .eq('id', id)
+      .is('deleted_at', null);
 
     if (error) {
       throw new AppError(500, `규칙서 삭제 실패: ${error.message}`);
     }
-
-    // TODO: S3 파일 삭제도 필요 (나중에 추가)
 
     res.json({ message: '규칙서가 삭제되었습니다.' });
   } catch (err) {

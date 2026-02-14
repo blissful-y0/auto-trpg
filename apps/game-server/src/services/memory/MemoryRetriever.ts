@@ -135,6 +135,7 @@ export class MemoryRetriever {
   }
 
   // DB 벡터 검색 (pgvector 코사인 유사도)
+  // 테이블별 select 컬럼이 다름: scene_summaries(key_events), session_summaries(key_decisions, plot_points)
   private async searchDB(
     table: 'scene_summaries' | 'session_summaries',
     queryEmbedding: number[],
@@ -143,29 +144,48 @@ export class MemoryRetriever {
   ): Promise<MemorySearchResult[]> {
     if (!this.supabaseClient) return [];
 
-    // pgvector의 <=> 연산자로 코사인 거리 계산 (RPC 함수 사용)
-    // 직접 쿼리가 불가하므로 embedding이 있는 행만 가져와서 클라이언트에서 정렬
-    const { data, error } = await this.supabaseClient
-      .from(table)
-      .select('summary, key_events, embedding')
-      .eq('session_id', sessionId)
-      .not('embedding', 'is', null)
-      .order('created_at', { ascending: false })
-      .limit(limit * 3); // 여유있게 가져와서 유사도 정렬
+    // 테이블 스키마에 맞는 쿼리 실행
+    let rows: Record<string, unknown>[];
 
-    if (error || !data) return [];
+    if (table === 'scene_summaries') {
+      const { data, error } = await this.supabaseClient
+        .from('scene_summaries')
+        .select('summary, key_events, embedding')
+        .eq('session_id', sessionId)
+        .not('embedding', 'is', null)
+        .order('created_at', { ascending: false })
+        .limit(limit * 3);
+      if (error || !data) return [];
+      rows = data as unknown as Record<string, unknown>[];
+    } else {
+      const { data, error } = await this.supabaseClient
+        .from('session_summaries')
+        .select('summary, key_decisions, plot_points, embedding')
+        .eq('session_id', sessionId)
+        .not('embedding', 'is', null)
+        .order('created_at', { ascending: false })
+        .limit(limit * 3);
+      if (error || !data) return [];
+      rows = data as unknown as Record<string, unknown>[];
+    }
 
-    return data
+    return rows
       .map((row) => {
-        const rowEmbedding = typeof row.embedding === 'string'
-          ? JSON.parse(row.embedding) as number[]
-          : row.embedding as number[];
+        const embeddingVal = row.embedding;
+        const rowEmbedding = typeof embeddingVal === 'string'
+          ? JSON.parse(embeddingVal) as number[]
+          : embeddingVal as number[];
+
+        // 테이블별 메타데이터 구성
+        const metadata: Record<string, unknown> = table === 'scene_summaries'
+          ? { keyEvents: row.key_events ?? [] }
+          : { keyDecisions: row.key_decisions ?? [], plotPoints: row.plot_points ?? [] };
 
         return {
-          content: row.summary,
+          content: row.summary as string,
           similarity: this.cosineSimilarity(queryEmbedding, rowEmbedding),
           source: table === 'scene_summaries' ? 'scene_summary' as const : 'session_summary' as const,
-          metadata: { keyEvents: row.key_events ?? [] },
+          metadata,
         };
       })
       .sort((a, b) => b.similarity - a.similarity)

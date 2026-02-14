@@ -23,10 +23,12 @@ export class PersistenceManager {
 
   async loadSession(sessionId: string): Promise<void> {
     // 세션 기본 정보 로드
+    // 소프트 삭제된 세션 제외
     const { data: session, error: sessionErr } = await this.supabase
       .from('game_sessions')
       .select('*')
       .eq('id', sessionId)
+      .is('deleted_at', null)
       .single();
 
     if (sessionErr || !session) {
@@ -46,11 +48,13 @@ export class PersistenceManager {
     await this.store.setSessionState(sessionId, state);
 
     // 캐릭터 로드
+    // 소프트 삭제된 캐릭터 제외
     const { data: characters } = await this.supabase
       .from('characters')
       .select('*')
       .eq('session_id', sessionId)
-      .eq('status', 'active');
+      .eq('status', 'active')
+      .is('deleted_at', null);
 
     if (characters) {
       for (const char of characters) {

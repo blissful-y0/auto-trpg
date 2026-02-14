@@ -88,17 +88,18 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const userId = req.user!.id;
 
-    // 참가 중인 세션 ID 조회
+    // 참가 중인 세션 ID 조회 (soft-delete 제외)
     const { data: participations } = await supabaseAdmin
       .from('session_participants')
       .select('session_id')
-      .eq('user_id', userId);
+      .eq('user_id', userId)
+      .is('deleted_at', null);
 
     const sessionIds = participations?.map((p: { session_id: string }) => p.session_id) || [];
 
-    // 생성했거나 참가 중인 세션 조회
+    // 생성했거나 참가 중인 세션 조회 (soft-delete 제외)
     // sessionIds가 비어있으면 IN() 절이 유효하지 않으므로 created_by만 필터링
-    let query = supabaseAdmin.from('game_sessions').select('*');
+    let query = supabaseAdmin.from('game_sessions').select('*').is('deleted_at', null);
 
     if (sessionIds.length > 0) {
       query = query.or(`created_by.eq.${userId},id.in.(${sessionIds.join(',')})`);
@@ -127,28 +128,31 @@ router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
     // 참가자 확인 (IDOR 방지: 참가자만 세션 상세 조회 가능)
     await assertSessionParticipant(id as string, userId);
 
-    // 세션 기본 정보
+    // 세션 기본 정보 (soft-delete 제외)
     const { data: session, error: sessionError } = await supabaseAdmin
       .from('game_sessions')
       .select('*')
       .eq('id', id)
+      .is('deleted_at', null)
       .single();
 
     if (sessionError || !session) {
       throw new AppError(404, '세션을 찾을 수 없습니다.');
     }
 
-    // 참가자 목록
+    // 참가자 목록 (soft-delete 제외)
     const { data: participants } = await supabaseAdmin
       .from('session_participants')
       .select('*, profiles(id, display_name, avatar_url)')
-      .eq('session_id', id);
+      .eq('session_id', id)
+      .is('deleted_at', null);
 
-    // 캐릭터 목록
+    // 캐릭터 목록 (soft-delete 제외)
     const { data: characters } = await supabaseAdmin
       .from('characters')
       .select('*')
-      .eq('session_id', id);
+      .eq('session_id', id)
+      .is('deleted_at', null);
 
     // 연결된 규칙서
     const { data: rulebooks } = await supabaseAdmin
@@ -175,11 +179,12 @@ router.post('/:id/join', async (req: Request, res: Response, next: NextFunction)
     const { id } = req.params;
     const userId = req.user!.id;
 
-    // 세션 확인
+    // 세션 확인 (soft-delete 제외)
     const { data: session, error: sessionError } = await supabaseAdmin
       .from('game_sessions')
       .select('id, max_players, status')
       .eq('id', id)
+      .is('deleted_at', null)
       .single();
 
     if (sessionError || !session) {
@@ -190,22 +195,24 @@ router.post('/:id/join', async (req: Request, res: Response, next: NextFunction)
       throw new AppError(400, '대기 중인 세션에만 참가할 수 있습니다.');
     }
 
-    // 현재 참가자 수 확인
+    // 현재 참가자 수 확인 (soft-delete 제외)
     const { count } = await supabaseAdmin
       .from('session_participants')
       .select('id', { count: 'exact', head: true })
-      .eq('session_id', id);
+      .eq('session_id', id)
+      .is('deleted_at', null);
 
     if (count !== null && count >= session.max_players) {
       throw new AppError(400, '세션이 가득 찼습니다.');
     }
 
-    // 이미 참가했는지 확인
+    // 이미 참가했는지 확인 (soft-delete 제외)
     const { data: existing } = await supabaseAdmin
       .from('session_participants')
       .select('id')
       .eq('session_id', id)
       .eq('user_id', userId)
+      .is('deleted_at', null)
       .single();
 
     if (existing) {
@@ -239,22 +246,25 @@ router.post('/:id/leave', async (req: Request, res: Response, next: NextFunction
     const { id } = req.params;
     const userId = req.user!.id;
 
-    // 세션 생성자는 퇴장 불가
+    // 세션 생성자는 퇴장 불가 (soft-delete 제외)
     const { data: session } = await supabaseAdmin
       .from('game_sessions')
       .select('created_by')
       .eq('id', id)
+      .is('deleted_at', null)
       .single();
 
     if (session?.created_by === userId) {
       throw new AppError(400, '세션 생성자는 퇴장할 수 없습니다. 세션을 삭제해주세요.');
     }
 
+    // soft delete (이미 삭제된 참가자 제외)
     const { error } = await supabaseAdmin
       .from('session_participants')
-      .delete()
+      .update({ deleted_at: new Date().toISOString() })
       .eq('session_id', id)
-      .eq('user_id', userId);
+      .eq('user_id', userId)
+      .is('deleted_at', null);
 
     if (error) {
       throw new AppError(500, `세션 퇴장 실패: ${error.message}`);
@@ -281,11 +291,12 @@ router.patch('/:id', async (req: Request, res: Response, next: NextFunction) => 
     const { id } = req.params;
     const userId = req.user!.id;
 
-    // 생성자 확인
+    // 생성자 확인 (soft-delete 제외)
     const { data: session } = await supabaseAdmin
       .from('game_sessions')
       .select('created_by, primary_provider, settings')
       .eq('id', id)
+      .is('deleted_at', null)
       .single();
 
     if (!session) {
@@ -341,10 +352,12 @@ router.patch('/:id', async (req: Request, res: Response, next: NextFunction) => 
       };
     }
 
+    // soft-delete된 세션에 대한 수정 방지
     const { data: updated, error } = await supabaseAdmin
       .from('game_sessions')
       .update(payload)
       .eq('id', id)
+      .is('deleted_at', null)
       .select()
       .single();
 

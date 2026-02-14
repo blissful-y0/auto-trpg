@@ -20,6 +20,8 @@ import type {
 } from './types';
 import type { RoomManager } from './RoomManager';
 import type { ActionQueue } from './ActionQueue';
+import { QueueFullError } from './ActionQueue';
+import type { SocketThrottle } from './SocketThrottle';
 import { createGameEngineForSession } from '../bootstrap';
 import { supabaseAdmin } from '../lib/supabase';
 import type { GMResponse } from '../services/game/gmTools';
@@ -33,11 +35,13 @@ type TypedSocket = Socket<ClientEvents, ServerEvents, Record<string, never>, Soc
 
 /** DB-backed: session_participants에서 세션 멤버 여부 확인 */
 export async function isSessionMember(sessionId: string, userId: string): Promise<boolean> {
+  // 소프트 삭제된 참가자 제외
   const { data, error } = await supabaseAdmin
     .from('session_participants')
     .select('id')
     .eq('session_id', sessionId)
     .eq('user_id', userId)
+    .is('deleted_at', null)
     .single();
 
   return !error && !!data;
@@ -45,10 +49,12 @@ export async function isSessionMember(sessionId: string, userId: string): Promis
 
 /** DB-backed: game_sessions.created_by로 세션 생성자(GM) 여부 확인 */
 export async function isSessionCreator(sessionId: string, userId: string): Promise<boolean> {
+  // 소프트 삭제된 세션 제외
   const { data, error } = await supabaseAdmin
     .from('game_sessions')
     .select('created_by')
     .eq('id', sessionId)
+    .is('deleted_at', null)
     .single();
 
   return !error && !!data && data.created_by === userId;
@@ -112,6 +118,17 @@ function toCharacterInfos(characters: Record<string, unknown>[]): CharacterInfo[
   });
 }
 
+/** fire-and-forget DB 저장 헬퍼 — .catch()로 unhandled rejection 방지 */
+function safeSave(label: string, promise: PromiseLike<{ error: { message: string } | null }>): void {
+  Promise.resolve(promise)
+    .then(({ error: dbErr }) => {
+      if (dbErr) console.error(`${label}:`, dbErr.message);
+    })
+    .catch((err) => {
+      console.error(`${label} (예외):`, err);
+    });
+}
+
 // GameEngine을 통해 플레이어 액션 처리
 async function processWithGameEngine(
   sessionId: string,
@@ -119,22 +136,24 @@ async function processWithGameEngine(
   message: string,
   characterId?: string,
 ): Promise<GMResponse> {
-  // DB에서 세션 정보 로드
+  // DB에서 세션 정보 로드 (소프트 삭제된 세션 제외)
   const { data: session } = await supabaseAdmin
     .from('game_sessions')
     .select('*')
     .eq('id', sessionId)
+    .is('deleted_at', null)
     .single();
 
   if (!session) {
     throw new Error('세션을 찾을 수 없습니다.');
   }
 
-  // DB에서 캐릭터 정보 로드
+  // DB에서 캐릭터 정보 로드 (소프트 삭제된 캐릭터 제외)
   const { data: characters } = await supabaseAdmin
     .from('characters')
     .select('*')
-    .eq('session_id', sessionId);
+    .eq('session_id', sessionId)
+    .is('deleted_at', null);
 
   // GameEngine 생성 및 액션 처리
   const engine = await createGameEngineForSession(sessionId, userId);
@@ -156,8 +175,21 @@ export function registerHandlers(
   actionQueue: ActionQueue,
   saveManager?: SaveManager,
   persistenceManager?: PersistenceManager,
+  throttle?: SocketThrottle,
 ): void {
   const user = socket.data.user;
+
+  /** 스로틀 검사 헬퍼 — 초과 시 에러 emit 후 true 반환 */
+  function isThrottled(eventName: string): boolean {
+    if (!throttle) return false;
+    if (throttle.allow(user.userId, eventName)) return false;
+
+    socket.emit('error', {
+      code: 'RATE_LIMIT',
+      message: `요청이 너무 빈번합니다. 잠시 후 다시 시도해주세요.`,
+    });
+    return true;
+  }
 
   // player:join — 세션 참가 (DB 멤버십 검증)
   socket.on('player:join', async (payload: PlayerJoinPayload) => {
@@ -224,6 +256,8 @@ export function registerHandlers(
 
   // player:action — 플레이어 액션 (세션 멤버십 검증 후 GameEngine 연동)
   socket.on('player:action', async (payload: PlayerActionPayload) => {
+    if (isThrottled('player:action')) return;
+
     const { sessionId, message, characterId } = payload;
 
     const authorized = await requireSessionMembership(sessionId, user.userId, roomManager);
@@ -236,7 +270,7 @@ export function registerHandlers(
     }
 
     // 플레이어 메시지 DB 저장
-    void supabaseAdmin
+    safeSave('플레이어 메시지 저장 실패', supabaseAdmin
       .from('messages')
       .insert({
         session_id: sessionId,
@@ -244,10 +278,7 @@ export function registerHandlers(
         sender_id: user.userId,
         content: message,
         metadata: { characterId },
-      })
-      .then(({ error: dbErr }: { error: { message: string } | null }) => {
-        if (dbErr) console.error('플레이어 메시지 저장 실패:', dbErr.message);
-      });
+      }));
 
     actionQueue
       .enqueue(sessionId, async () => {
@@ -276,7 +307,7 @@ export function registerHandlers(
         }
 
         // GM 응답 메시지를 DB에 저장
-        void supabaseAdmin
+        safeSave('GM 메시지 저장 실패', supabaseAdmin
           .from('messages')
           .insert({
             session_id: sessionId,
@@ -288,14 +319,11 @@ export function registerHandlers(
               rulesApplied: response.rulesApplied,
               sceneTransition: response.sceneTransition,
             },
-          })
-          .then(({ error: dbErr }: { error: { message: string } | null }) => {
-            if (dbErr) console.error('GM 메시지 저장 실패:', dbErr.message);
-          });
+          }));
 
         // 토큰 사용량 기록
         if (response.tokenUsage) {
-          void supabaseAdmin
+          safeSave('토큰 사용량 기록 실패', supabaseAdmin
             .from('game_events')
             .insert({
               session_id: sessionId,
@@ -308,15 +336,12 @@ export function registerHandlers(
                 model: response.tokenUsage.model,
                 provider: response.tokenUsage.provider,
               },
-            })
-            .then(({ error: dbErr }: { error: { message: string } | null }) => {
-              if (dbErr) console.error('토큰 사용량 기록 실패:', dbErr.message);
-            });
+            }));
         }
       })
       .catch((err) => {
         socket.emit('error', {
-          code: 'ACTION_ERROR',
+          code: err instanceof QueueFullError ? 'RATE_LIMIT' : 'ACTION_ERROR',
           message: err instanceof Error ? err.message : '액션 처리 중 오류가 발생했습니다.',
         });
       });
@@ -324,6 +349,8 @@ export function registerHandlers(
 
   // dice:roll — 주사위 굴림 (세션 멤버십 검증)
   socket.on('dice:roll', async (payload: DiceRollPayload) => {
+    if (isThrottled('dice:roll')) return;
+
     try {
       const { sessionId, dice, count, modifier, reason } = payload;
 
@@ -365,7 +392,7 @@ export function registerHandlers(
         ? `🎲 ${reason}: ${notation} → [${rolls.join(', ')}] = ${total}`
         : `🎲 ${notation} → [${rolls.join(', ')}] = ${total}`;
 
-      void supabaseAdmin
+      safeSave('주사위 결과 메시지 저장 실패', supabaseAdmin
         .from('messages')
         .insert({
           session_id: sessionId,
@@ -373,10 +400,7 @@ export function registerHandlers(
           sender_id: user.userId,
           content: diceResultText,
           metadata: { dice, count: rollCount, modifier, rolls, total, reason },
-        })
-        .then(({ error: dbErr }: { error: { message: string } | null }) => {
-          if (dbErr) console.error('주사위 결과 메시지 저장 실패:', dbErr.message);
-        });
+        }));
 
       // 주사위 결과를 GM에게 전달하여 후속 내러티브 생성
       if (reason) {
@@ -399,7 +423,7 @@ export function registerHandlers(
               });
 
               // GM 후속 응답 DB 저장
-              void supabaseAdmin
+              safeSave('GM 후속 응답 저장 실패', supabaseAdmin
                 .from('messages')
                 .insert({
                   session_id: sessionId,
@@ -410,10 +434,7 @@ export function registerHandlers(
                     diceRequests: response.diceRolls,
                     triggeredByDice: { notation, rolls, total, reason },
                   },
-                })
-                .then(({ error: dbErr }: { error: { message: string } | null }) => {
-                  if (dbErr) console.error('GM 후속 응답 저장 실패:', dbErr.message);
-                });
+                }));
             }
           })
           .catch((err) => {
@@ -430,6 +451,8 @@ export function registerHandlers(
 
   // chat:message — 채팅 메시지 (세션 멤버십 검증)
   socket.on('chat:message', async (payload: ChatMessagePayload) => {
+    if (isThrottled('chat:message')) return;
+
     try {
       const { sessionId, content, isOOC } = payload;
 
@@ -440,7 +463,7 @@ export function registerHandlers(
       }
 
       // 플레이어 메시지 DB 저장 (OOC/IC 모두)
-      void supabaseAdmin
+      safeSave('채팅 메시지 저장 실패', supabaseAdmin
         .from('messages')
         .insert({
           session_id: sessionId,
@@ -448,10 +471,7 @@ export function registerHandlers(
           sender_id: user.userId,
           content,
           is_ooc: isOOC,
-        })
-        .then(({ error: dbErr }: { error: { message: string } | null }) => {
-          if (dbErr) console.error('채팅 메시지 저장 실패:', dbErr.message);
-        });
+        }));
 
       if (isOOC) {
         // OOC 메시지: 단순 채팅 중계 (GM 개입 없음)
@@ -482,7 +502,7 @@ export function registerHandlers(
             });
 
             // GM 응답 DB 저장
-            void supabaseAdmin
+            safeSave('GM 메시지 저장 실패', supabaseAdmin
               .from('messages')
               .insert({
                 session_id: sessionId,
@@ -492,14 +512,11 @@ export function registerHandlers(
                   stateChanges: response.stateChanges,
                   diceRequests: response.diceRolls,
                 },
-              })
-              .then(({ error: dbErr }: { error: { message: string } | null }) => {
-                if (dbErr) console.error('GM 메시지 저장 실패:', dbErr.message);
-              });
+              }));
 
             // 토큰 사용량 기록
             if (response.tokenUsage) {
-              void supabaseAdmin
+              safeSave('토큰 사용량 기록 실패', supabaseAdmin
                 .from('game_events')
                 .insert({
                   session_id: sessionId,
@@ -512,15 +529,12 @@ export function registerHandlers(
                     model: response.tokenUsage.model,
                     provider: response.tokenUsage.provider,
                   },
-                })
-                .then(({ error: dbErr }: { error: { message: string } | null }) => {
-                  if (dbErr) console.error('토큰 사용량 기록 실패:', dbErr.message);
-                });
+                }));
             }
           })
           .catch((err) => {
             socket.emit('error', {
-              code: 'CHAT_ERROR',
+              code: err instanceof QueueFullError ? 'RATE_LIMIT' : 'CHAT_ERROR',
               message: err instanceof Error ? err.message : '채팅 처리 중 오류가 발생했습니다.',
             });
           });
@@ -562,6 +576,8 @@ export function registerHandlers(
 
   // combat:action — 전투 액션 (세션 멤버십 검증 후 GameEngine으로 전달)
   socket.on('combat:action', async (payload: CombatActionPayload) => {
+    if (isThrottled('combat:action')) return;
+
     try {
       const { sessionId, action } = payload;
 
@@ -604,7 +620,7 @@ export function registerHandlers(
         })
         .catch((err) => {
           socket.emit('error', {
-            code: 'COMBAT_ERROR',
+            code: err instanceof QueueFullError ? 'RATE_LIMIT' : 'COMBAT_ERROR',
             message: err instanceof Error ? err.message : '전투 액션 처리 중 오류가 발생했습니다.',
           });
         });
@@ -804,7 +820,7 @@ export function registerHandlers(
     }
   });
 
-  // 연결 종료 시 모든 방에서 퇴장
+  // 연결 종료 시 모든 방에서 퇴장 + 스로틀 상태 정리
   socket.on('disconnect', () => {
     const leftRooms = roomManager.leaveAllRooms(socket.id);
     for (const { sessionId, userId } of leftRooms) {
@@ -814,5 +830,6 @@ export function registerHandlers(
         name: user.email ?? '알 수 없는 플레이어',
       });
     }
+    throttle?.clearUser(user.userId);
   });
 }

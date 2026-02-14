@@ -2,7 +2,20 @@
 
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
-import { Key, Plus, Trash2, ShieldCheck, Loader2, AlertCircle } from 'lucide-react';
+import {
+  Key,
+  Plus,
+  Trash2,
+  ShieldCheck,
+  Loader2,
+  AlertCircle,
+  ExternalLink,
+  ChevronDown,
+  ChevronUp,
+  RefreshCw,
+  Edit3,
+  Lock,
+} from 'lucide-react';
 import { settingsApi } from '@/lib/api';
 
 interface ApiKey {
@@ -11,6 +24,7 @@ interface ApiKey {
   hint: string;
   addedAt: string;
   isValid: boolean | null;
+  lastValidated: string | null;
 }
 
 interface ProviderModel {
@@ -22,6 +36,33 @@ const providerConfig: Record<string, { name: string; placeholder: string; color:
   openai: { name: 'OpenAI', placeholder: 'sk-...', color: 'text-success' },
   anthropic: { name: 'Anthropic', placeholder: 'sk-ant-...', color: 'text-gold' },
   google: { name: 'Google AI', placeholder: 'AI...', color: 'text-info' },
+};
+
+const providerGuide: Record<string, { url: string; steps: string[] }> = {
+  anthropic: {
+    url: 'https://console.anthropic.com/settings/keys',
+    steps: [
+      'console.anthropic.com 접속 후 로그인',
+      'Settings → API Keys 메뉴',
+      'Create Key 클릭 → 키 복사',
+    ],
+  },
+  openai: {
+    url: 'https://platform.openai.com/api-keys',
+    steps: [
+      'platform.openai.com 접속 후 로그인',
+      'API Keys 메뉴',
+      'Create new secret key → 키 복사',
+    ],
+  },
+  google: {
+    url: 'https://aistudio.google.com/apikey',
+    steps: [
+      'aistudio.google.com 접속 후 로그인',
+      'Get API Key 클릭',
+      '프로젝트 선택 → 키 생성 → 복사',
+    ],
+  },
 };
 
 // 프론트엔드 → 백엔드 프로바이더 이름 매핑
@@ -38,6 +79,18 @@ const providerToFrontend: Record<string, string> = {
   gemini: 'google',
 };
 
+function getRelativeTime(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const minutes = Math.floor(diff / 60000);
+  if (minutes < 1) return '방금 전';
+  if (minutes < 60) return `${minutes}분 전`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}시간 전`;
+  const days = Math.floor(hours / 24);
+  if (days === 1) return '어제';
+  return `${days}일 전`;
+}
+
 function mapApiKeysFromBackend(keys: any[]): ApiKey[] {
   return keys.map((k: any) => ({
     id: k.id,
@@ -45,6 +98,7 @@ function mapApiKeysFromBackend(keys: any[]): ApiKey[] {
     hint: k.key_hint || '***',
     addedAt: k.created_at ? new Date(k.created_at).toLocaleDateString('ko-KR') : '-',
     isValid: k.is_valid ?? null,
+    lastValidated: k.updated_at ? getRelativeTime(k.updated_at) : null,
   }));
 }
 
@@ -52,8 +106,6 @@ export default function SettingsPage() {
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [newKeyProvider, setNewKeyProvider] = useState('anthropic');
-  const [newKeyValue, setNewKeyValue] = useState('');
   const [validating, setValidating] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
@@ -61,6 +113,12 @@ export default function SettingsPage() {
   const [modelSource, setModelSource] = useState<'live' | 'static' | null>(null);
   const [providerModels, setProviderModels] = useState<ProviderModel[]>([]);
   const [loadingModels, setLoadingModels] = useState(false);
+
+  // 프로바이더별 인라인 상태
+  const [newKeyValues, setNewKeyValues] = useState<Record<string, string>>({});
+  const [editingProvider, setEditingProvider] = useState<string | null>(null);
+  const [editKeyValue, setEditKeyValue] = useState('');
+  const [showGuide, setShowGuide] = useState<string | null>(null);
 
   // API 키 목록 로드
   const loadKeys = async () => {
@@ -103,16 +161,25 @@ export default function SettingsPage() {
     void loadProviderModels(modelProvider, true);
   }, [modelProvider]);
 
-  const handleAddKey = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    if (!newKeyValue.trim()) return;
+  const handleAddKey = async (provider: string) => {
+    const keyValue = newKeyValues[provider] || editKeyValue;
+    if (!keyValue.trim()) return;
 
     setSaving(true);
     try {
-      const backendProvider = providerToBackend[newKeyProvider] || newKeyProvider;
-      await settingsApi.addApiKey(backendProvider, newKeyValue);
-      toast.success('API 키가 등록되었습니다');
-      setNewKeyValue('');
+      const backendProvider = providerToBackend[provider] || provider;
+      const res = await settingsApi.addApiKey(backendProvider, keyValue);
+      const autoValidation = (res as any)?.data?.autoValidation;
+      if (autoValidation?.isValid) {
+        toast.success('API 키가 등록되고 검증되었습니다');
+      } else if (autoValidation && !autoValidation.isValid) {
+        toast.success('API 키가 등록되었습니다 (검증 실패 -- 키를 확인해주세요)');
+      } else {
+        toast.success('API 키가 등록되었습니다');
+      }
+      setNewKeyValues((prev) => ({ ...prev, [provider]: '' }));
+      setEditingProvider(null);
+      setEditKeyValue('');
       await loadKeys();
     } catch (err: any) {
       const msg = err.message || 'API 키 등록에 실패했습니다';
@@ -178,6 +245,13 @@ export default function SettingsPage() {
     );
   };
 
+  const getKeyForProvider = (provider: string): ApiKey | undefined => {
+    return apiKeys.find((k) => k.provider === provider);
+  };
+
+  // 프로바이더 카드 순서
+  const providerOrder = ['anthropic', 'openai', 'google'];
+
   return (
     <div className="max-w-2xl mx-auto">
       <div className="mb-8">
@@ -186,6 +260,248 @@ export default function SettingsPage() {
           설정
         </h2>
         <p className="text-text-tertiary mt-1">API 키 및 계정 설정을 관리하세요</p>
+      </div>
+
+      {/* API 키 관리 — 프로바이더별 카드 */}
+      <div className="mb-6">
+        <div className="mb-4">
+          <h3 className="text-heading-3 text-text-primary mb-1">API 키 관리</h3>
+          <p className="text-sm text-text-tertiary">
+            BYOK(Bring Your Own Key) -- 각 AI 프로바이더의 API 키를 등록하면 해당 모델을 사용할 수
+            있습니다.
+          </p>
+        </div>
+
+        {loading ? (
+          <div className="flex items-center justify-center py-8 text-text-tertiary">
+            <Loader2 size={20} className="animate-spin mr-2" />키 목록 불러오는 중...
+          </div>
+        ) : loadError ? (
+          <div className="card p-6 flex flex-col items-center py-8">
+            <AlertCircle size={32} className="text-danger mb-2" />
+            <p className="text-danger text-sm mb-1">키 목록을 불러올 수 없습니다</p>
+            <p className="text-text-tertiary text-xs mb-3">{loadError}</p>
+            <button onClick={loadKeys} className="text-xs text-gold hover:text-gold-dim">
+              다시 시도
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {providerOrder.map((provider) => {
+              const config = providerConfig[provider];
+              const guide = providerGuide[provider];
+              const existingKey = getKeyForProvider(provider);
+              const isEditing = editingProvider === provider;
+
+              return (
+                <div
+                  key={provider}
+                  className="card p-5 border border-line hover:border-line-strong transition-colors"
+                >
+                  {/* 카드 헤더 */}
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="w-10 h-10 rounded-lg bg-bg-inset flex items-center justify-center shrink-0">
+                      <Key size={18} className={config.color} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-text-primary">
+                          {config.name}
+                        </span>
+                        {existingKey ? (
+                          validityBadge(existingKey.isValid)
+                        ) : (
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-bg-overlay text-text-tertiary border border-line">
+                            미등록
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 등록된 키 정보 */}
+                  {existingKey && !isEditing && (
+                    <div className="space-y-3">
+                      <div className="bg-bg-inset rounded-lg p-3 space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-text-tertiary">키 힌트</span>
+                          <span className="text-sm font-mono text-text-secondary">
+                            {existingKey.hint}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-text-tertiary">등록일</span>
+                          <span className="text-xs text-text-secondary">{existingKey.addedAt}</span>
+                        </div>
+                        {existingKey.lastValidated && (
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-text-tertiary">마지막 검증</span>
+                            <span className="text-xs text-text-secondary">
+                              {existingKey.lastValidated}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* 액션 버튼 */}
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleValidateKey(existingKey)}
+                          disabled={validating === existingKey.id}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-text-secondary hover:text-gold hover:bg-bg-inset transition-colors disabled:opacity-50"
+                        >
+                          {validating === existingKey.id ? (
+                            <Loader2 size={14} className="animate-spin" />
+                          ) : (
+                            <RefreshCw size={14} />
+                          )}
+                          검증
+                        </button>
+                        <button
+                          onClick={() => {
+                            setEditingProvider(provider);
+                            setEditKeyValue('');
+                          }}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-text-secondary hover:text-info hover:bg-bg-inset transition-colors"
+                        >
+                          <Edit3 size={14} />
+                          키 변경
+                        </button>
+                        <button
+                          onClick={() => handleDeleteKey(existingKey)}
+                          disabled={deleting === existingKey.id}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-text-secondary hover:text-danger hover:bg-danger/10 transition-colors disabled:opacity-50"
+                        >
+                          {deleting === existingKey.id ? (
+                            <Loader2 size={14} className="animate-spin" />
+                          ) : (
+                            <Trash2 size={14} />
+                          )}
+                          삭제
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 키 변경 인라인 폼 */}
+                  {existingKey && isEditing && (
+                    <div className="space-y-3">
+                      <div className="flex gap-2">
+                        <input
+                          type="password"
+                          value={editKeyValue}
+                          onChange={(e) => setEditKeyValue(e.target.value)}
+                          placeholder={config.placeholder}
+                          className="input-field flex-1"
+                          autoFocus
+                        />
+                        <button
+                          onClick={() => handleAddKey(provider)}
+                          disabled={!editKeyValue.trim() || saving}
+                          className="btn-primary px-4 disabled:opacity-50 flex items-center gap-1.5 shrink-0"
+                        >
+                          {saving ? (
+                            <Loader2 size={14} className="animate-spin" />
+                          ) : (
+                            <RefreshCw size={14} />
+                          )}
+                          변경
+                        </button>
+                        <button
+                          onClick={() => {
+                            setEditingProvider(null);
+                            setEditKeyValue('');
+                          }}
+                          className="px-3 py-1.5 rounded-lg text-xs text-text-tertiary hover:text-text-secondary hover:bg-bg-inset transition-colors"
+                        >
+                          취소
+                        </button>
+                      </div>
+                      <p className="flex items-center gap-1.5 text-xs text-text-tertiary">
+                        <Lock size={12} />
+                        API 키는 AES-256-GCM으로 암호화되어 저장됩니다. 평문은 서버에 보관되지
+                        않습니다.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* 미등록 — 인라인 등록 폼 */}
+                  {!existingKey && (
+                    <div className="space-y-3">
+                      <div className="flex gap-2">
+                        <input
+                          type="password"
+                          value={newKeyValues[provider] || ''}
+                          onChange={(e) =>
+                            setNewKeyValues((prev) => ({ ...prev, [provider]: e.target.value }))
+                          }
+                          placeholder={config.placeholder}
+                          className="input-field flex-1"
+                        />
+                        <button
+                          onClick={() => handleAddKey(provider)}
+                          disabled={!(newKeyValues[provider] || '').trim() || saving}
+                          className="btn-primary px-4 disabled:opacity-50 flex items-center gap-1.5 shrink-0"
+                        >
+                          {saving ? (
+                            <Loader2 size={14} className="animate-spin" />
+                          ) : (
+                            <Plus size={14} />
+                          )}
+                          등록
+                        </button>
+                      </div>
+                      <p className="flex items-center gap-1.5 text-xs text-text-tertiary">
+                        <Lock size={12} />
+                        API 키는 AES-256-GCM으로 암호화되어 저장됩니다. 평문은 서버에 보관되지
+                        않습니다.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* 발급 가이드 토글 */}
+                  <div className="mt-4 pt-3 border-t border-line">
+                    <button
+                      onClick={() => setShowGuide(showGuide === provider ? null : provider)}
+                      className="flex items-center gap-1.5 text-xs text-text-tertiary hover:text-text-secondary transition-colors"
+                    >
+                      {showGuide === provider ? (
+                        <ChevronUp size={14} />
+                      ) : (
+                        <ChevronDown size={14} />
+                      )}
+                      발급 가이드 보기
+                    </button>
+
+                    {showGuide === provider && (
+                      <div className="mt-3 space-y-2">
+                        <ol className="text-xs text-text-tertiary space-y-1.5 list-none">
+                          {guide.steps.map((step, i) => (
+                            <li key={i} className="flex items-start gap-2">
+                              <span className="text-text-tertiary font-mono shrink-0">
+                                {i + 1}.
+                              </span>
+                              <span>{step}</span>
+                            </li>
+                          ))}
+                        </ol>
+                        <a
+                          href={guide.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 text-xs text-gold hover:underline mt-1"
+                        >
+                          <ExternalLink size={12} />
+                          {config.name} 키 발급 페이지
+                        </a>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* 제공 모델 목록 */}
@@ -252,194 +568,31 @@ export default function SettingsPage() {
         )}
       </div>
 
-      {/* API 키 관리 섹션 */}
-      <div className="card p-6 mb-6">
-        <div className="mb-6">
-          <h3 className="text-heading-3 text-text-primary mb-1">API 키 관리</h3>
-          <p className="text-sm text-text-tertiary">
-            BYOK(Bring Your Own Key) — 각 AI 프로바이더의 API 키를 등록하면 해당 모델을 사용할 수
-            있습니다.
-          </p>
-        </div>
-
-        {loading ? (
-          <div className="flex items-center justify-center py-8 text-text-tertiary">
-            <Loader2 size={20} className="animate-spin mr-2" />키 목록 불러오는 중...
-          </div>
-        ) : loadError ? (
-          <div className="flex flex-col items-center py-8">
-            <AlertCircle size={32} className="text-danger mb-2" />
-            <p className="text-danger text-sm mb-1">키 목록을 불러올 수 없습니다</p>
-            <p className="text-text-tertiary text-xs mb-3">{loadError}</p>
-            <button onClick={loadKeys} className="text-xs text-gold hover:text-gold-dim">
-              다시 시도
-            </button>
-          </div>
-        ) : (
-          <>
-            {/* 등록된 키 목록 */}
-            {apiKeys.length > 0 ? (
-              <div className="space-y-2 mb-6">
-                {apiKeys.map((key) => (
-                  <div
-                    key={key.id}
-                    className="flex items-center gap-3 p-4 bg-bg-overlay rounded-lg border border-line hover:border-line-strong transition-colors"
-                  >
-                    <div className="w-10 h-10 rounded-lg bg-bg-overlay flex items-center justify-center shrink-0">
-                      <Key
-                        size={18}
-                        className={providerConfig[key.provider]?.color || 'text-text-tertiary'}
-                      />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-0.5">
-                        <span className="text-sm font-medium text-text-secondary">
-                          {providerConfig[key.provider]?.name ?? key.provider}
-                        </span>
-                        {validityBadge(key.isValid)}
-                      </div>
-                      <p className="text-xs text-text-tertiary font-mono">{key.hint}</p>
-                    </div>
-                    <div className="flex items-center gap-1 shrink-0">
-                      <button
-                        onClick={() => handleValidateKey(key)}
-                        disabled={validating === key.id}
-                        className="p-2 rounded-lg text-text-tertiary hover:text-gold hover:bg-bg-overlay transition-colors disabled:opacity-50"
-                        title="키 검증"
-                      >
-                        {validating === key.id ? (
-                          <Loader2 size={16} className="animate-spin" />
-                        ) : (
-                          <ShieldCheck size={16} />
-                        )}
-                      </button>
-                      <button
-                        onClick={() => handleDeleteKey(key)}
-                        disabled={deleting === key.id}
-                        className="p-2 rounded-lg text-text-tertiary hover:text-danger hover:bg-danger/10 transition-colors disabled:opacity-50"
-                        title="키 삭제"
-                      >
-                        {deleting === key.id ? (
-                          <Loader2 size={16} className="animate-spin" />
-                        ) : (
-                          <Trash2 size={16} />
-                        )}
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-6 mb-6 bg-bg-inset rounded-lg border border-dashed border-line">
-                <Key size={28} className="text-text-tertiary mx-auto mb-2" />
-                <p className="text-sm text-text-tertiary">등록된 API 키가 없습니다</p>
-                <p className="text-xs text-text-tertiary mt-1">아래에서 키를 등록하세요</p>
-              </div>
-            )}
-          </>
-        )}
-
-        {/* 새 키 등록 */}
-        <div className="pt-4 border-t border-line">
-          <h4 className="text-sm font-medium text-text-secondary mb-3 flex items-center gap-2">
-            <Plus size={16} />새 API 키 등록
-          </h4>
-          <form onSubmit={handleAddKey} className="space-y-3">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div>
-                <label className="block text-xs text-text-tertiary mb-1">프로바이더</label>
-                <select
-                  value={newKeyProvider}
-                  onChange={(e) => setNewKeyProvider(e.target.value)}
-                  className="input-field"
-                >
-                  {Object.entries(providerConfig).map(([id, config]) => (
-                    <option key={id} value={id}>
-                      {config.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="sm:col-span-2">
-                <label className="block text-xs text-text-tertiary mb-1">API 키</label>
-                <input
-                  type="password"
-                  value={newKeyValue}
-                  onChange={(e) => setNewKeyValue(e.target.value)}
-                  placeholder={providerConfig[newKeyProvider]?.placeholder ?? 'API 키 입력'}
-                  className="input-field"
-                />
-              </div>
-            </div>
-            <button
-              type="submit"
-              disabled={!newKeyValue.trim() || saving}
-              className="btn-primary w-full sm:w-auto disabled:opacity-50 flex items-center justify-center gap-2"
-            >
-              {saving ? (
-                <>
-                  <Loader2 size={16} className="animate-spin" />
-                  등록 중...
-                </>
-              ) : (
-                <>
-                  <Plus size={16} />키 등록
-                </>
-              )}
-            </button>
-          </form>
-        </div>
-      </div>
-
       {/* 도움말 */}
       <div className="card p-4">
         <h4 className="text-sm font-medium text-text-secondary mb-2">API 키 발급 안내</h4>
         <ul className="text-xs text-text-tertiary space-y-1.5">
-          <li className="flex items-start gap-2">
-            <span className="text-gold mt-0.5">{'>'}</span>
-            <span>
-              Anthropic:{' '}
-              <a
-                href="https://console.anthropic.com/settings/keys"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-gold hover:underline"
-              >
-                console.anthropic.com
-              </a>
-              에서 발급
-            </span>
-          </li>
-          <li className="flex items-start gap-2">
-            <span className="text-success mt-0.5">{'>'}</span>
-            <span>
-              OpenAI:{' '}
-              <a
-                href="https://platform.openai.com/api-keys"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-gold hover:underline"
-              >
-                platform.openai.com
-              </a>
-              에서 발급
-            </span>
-          </li>
-          <li className="flex items-start gap-2">
-            <span className="text-info mt-0.5">{'>'}</span>
-            <span>
-              Google AI:{' '}
-              <a
-                href="https://aistudio.google.com/apikey"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-gold hover:underline"
-              >
-                aistudio.google.com
-              </a>
-              에서 발급
-            </span>
-          </li>
+          {providerOrder.map((provider) => {
+            const config = providerConfig[provider];
+            const guide = providerGuide[provider];
+            return (
+              <li key={provider} className="flex items-start gap-2">
+                <span className={`${config.color} mt-0.5`}>{'>'}</span>
+                <span>
+                  {config.name}:{' '}
+                  <a
+                    href={guide.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-gold hover:underline"
+                  >
+                    {new URL(guide.url).hostname}
+                  </a>
+                  에서 발급
+                </span>
+              </li>
+            );
+          })}
         </ul>
       </div>
     </div>

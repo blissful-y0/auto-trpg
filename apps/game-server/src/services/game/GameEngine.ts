@@ -147,9 +147,12 @@ export class GameEngine {
       }));
     }
 
-    // 7. 상태 변경 적용
+    // 7. 상태 변경 검증 + 적용 (LLM 환각 방지)
     if (gmResponse.stateChanges && gmResponse.stateChanges.length > 0) {
-      await this.applyStateChanges(action.sessionId, gmResponse.stateChanges);
+      gmResponse.stateChanges = this.validateStateChanges(gmResponse.stateChanges, characters);
+      if (gmResponse.stateChanges.length > 0) {
+        await this.applyStateChanges(action.sessionId, gmResponse.stateChanges);
+      }
     }
 
     // 8. GM 응답 저장
@@ -204,6 +207,70 @@ export class GameEngine {
     }
 
     return bestType;
+  }
+
+  // 상태 변경 검증 — LLM 환각 방지
+  validateStateChanges(changes: StateChange[], characters: CharacterInfo[]): StateChange[] {
+    const characterIds = new Set(characters.map((c) => c.characterId));
+    const validTypes = new Set<string>([
+      'hp_change', 'item_add', 'item_remove', 'condition_add',
+      'condition_remove', 'xp_gain', 'gold_change', 'location_change',
+    ]);
+
+    return changes.filter((change) => {
+      // 유효한 변경 유형인지 확인
+      if (!validTypes.has(change.type)) {
+        console.warn(`[GameEngine] 유효하지 않은 상태 변경 유형 무시: "${change.type}"`);
+        return false;
+      }
+
+      // 대상 캐릭터가 세션에 존재하는지 확인
+      if (!characterIds.has(change.targetCharacterId)) {
+        console.warn(
+          `[GameEngine] 존재하지 않는 캐릭터 ID 무시: "${change.targetCharacterId}"`,
+        );
+        return false;
+      }
+
+      // HP 변경: 숫자 검증 + 0~maxHp 범위 클램핑
+      if (change.type === 'hp_change') {
+        if (typeof change.value !== 'number') {
+          console.warn(`[GameEngine] hp_change 값이 숫자가 아님, 무시: ${change.value}`);
+          return false;
+        }
+        const character = characters.find((c) => c.characterId === change.targetCharacterId);
+        if (character) {
+          const newHp = character.hp.current + change.value;
+          const clamped = Math.max(0, Math.min(newHp, character.hp.max));
+          change.value = clamped - character.hp.current;
+        }
+      }
+
+      // XP/Gold 변경: 숫자 검증 + 합리적 범위 제한
+      if (change.type === 'xp_gain' || change.type === 'gold_change') {
+        if (typeof change.value !== 'number') {
+          console.warn(`[GameEngine] ${change.type} 값이 숫자가 아님, 무시: ${change.value}`);
+          return false;
+        }
+        const MAX_SINGLE_CHANGE = 10000;
+        if (Math.abs(change.value) > MAX_SINGLE_CHANGE) {
+          console.warn(
+            `[GameEngine] ${change.type} 값 범위 초과 (${change.value}), ${MAX_SINGLE_CHANGE}으로 클램핑`,
+          );
+          change.value = Math.sign(change.value) * MAX_SINGLE_CHANGE;
+        }
+      }
+
+      // 문자열 값 필요 유형: 빈 문자열 방지
+      if (['item_add', 'item_remove', 'condition_add', 'condition_remove', 'location_change'].includes(change.type)) {
+        if (typeof change.value !== 'string' || change.value.trim().length === 0) {
+          console.warn(`[GameEngine] ${change.type} 값이 유효한 문자열이 아님, 무시`);
+          return false;
+        }
+      }
+
+      return true;
+    });
   }
 
   // 상태 변경 적용

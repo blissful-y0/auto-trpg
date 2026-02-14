@@ -58,7 +58,7 @@ function createMockStore() {
   };
 }
 
-// Supabase mock
+// Supabase mock — .is() 체인 지원
 function createMockSupabase() {
   return {
     from: vi.fn((table: string) => {
@@ -66,22 +66,24 @@ function createMockSupabase() {
         return {
           select: vi.fn(() => ({
             eq: vi.fn(() => ({
-              eq: vi.fn(async () => ({
-                data: [
-                  {
-                    id: 'char-1',
-                    name: '아라곤',
-                    race: '인간',
-                    class: '전사',
-                    level: 5,
-                    hit_points: { current: 40, max: 45, temp: 0 },
-                    armor_class: 16,
-                    inventory: ['장검'],
-                    abilities: ['세컨드 윈드'],
-                    status: 'active',
-                  },
-                ],
-                error: null,
+              eq: vi.fn(() => ({
+                is: vi.fn(async () => ({
+                  data: [
+                    {
+                      id: 'char-1',
+                      name: '아라곤',
+                      race: '인간',
+                      class: '전사',
+                      level: 5,
+                      hit_points: { current: 40, max: 45, temp: 0 },
+                      armor_class: 16,
+                      inventory: ['장검'],
+                      abilities: ['세컨드 윈드'],
+                      status: 'active',
+                    },
+                  ],
+                  error: null,
+                })),
               })),
             })),
           })),
@@ -94,16 +96,18 @@ function createMockSupabase() {
       return {
         select: vi.fn(() => ({
           eq: vi.fn(() => ({
-            single: vi.fn(async () => ({
-              data: {
-                id: 'session-1',
-                status: 'active',
-                game_system: 'dnd5e',
-                current_scene: 1,
-                world_state: { currentLocation: '팬달린' },
-                settings: {},
-              },
-              error: null,
+            is: vi.fn(() => ({
+              single: vi.fn(async () => ({
+                data: {
+                  id: 'session-1',
+                  status: 'active',
+                  game_system: 'dnd5e',
+                  current_scene: 1,
+                  world_state: { currentLocation: '팬달린' },
+                  settings: {},
+                },
+                error: null,
+              })),
             })),
           })),
         })),

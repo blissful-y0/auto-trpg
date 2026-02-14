@@ -18,18 +18,16 @@ function optionalEnv(key: string, defaultValue: string): string {
 }
 
 function getEncryptionSecret(): string {
-  const nodeEnv = process.env.NODE_ENV || 'development';
   const secret = process.env.ENCRYPTION_SECRET;
 
-  if (nodeEnv === 'production' && !secret) {
+  if (!secret) {
     throw new Error(
-      'ENCRYPTION_SECRET must be set in production environment. ' +
-        'This is a required security configuration.',
+      'ENCRYPTION_SECRET 환경변수가 설정되지 않았습니다. ' +
+        '모든 환경에서 반드시 설정해야 합니다.',
     );
   }
 
-  // Safe fallback only in development
-  return secret || 'dev-secret-change-in-production';
+  return secret;
 }
 
 export const config = {

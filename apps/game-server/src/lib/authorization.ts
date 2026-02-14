@@ -16,10 +16,12 @@ export async function assertSessionParticipant(
   userId: string,
 ): Promise<{ id: string; role: string; character_id: string | null }> {
   // Verify session exists
+  // 소프트 삭제된 세션 제외
   const { data: session } = await supabaseAdmin
     .from('game_sessions')
     .select('id')
     .eq('id', sessionId)
+    .is('deleted_at', null)
     .single();
 
   if (!session) {
@@ -27,11 +29,13 @@ export async function assertSessionParticipant(
   }
 
   // Verify user is a participant
+  // 소프트 삭제된 참가자 제외
   const { data: participant } = await supabaseAdmin
     .from('session_participants')
     .select('id, role, character_id')
     .eq('session_id', sessionId)
     .eq('user_id', userId)
+    .is('deleted_at', null)
     .single();
 
   if (!participant) {
@@ -50,10 +54,12 @@ export async function assertRulebookOwner(
   rulebookId: string,
   userId: string,
 ): Promise<{ id: string; user_id: string }> {
+  // 소프트 삭제된 규칙서 제외
   const { data: rulebook } = await supabaseAdmin
     .from('rulebooks')
     .select('id, user_id')
     .eq('id', rulebookId)
+    .is('deleted_at', null)
     .single();
 
   if (!rulebook) {
@@ -73,10 +79,12 @@ export async function assertRulebookOwner(
  * Throws 404 if not found, 403 if no access path exists.
  */
 export async function assertRulebookAccess(rulebookId: string, userId: string): Promise<void> {
+  // 소프트 삭제된 규칙서 제외
   const { data: rulebook } = await supabaseAdmin
     .from('rulebooks')
     .select('id, user_id')
     .eq('id', rulebookId)
+    .is('deleted_at', null)
     .single();
 
   if (!rulebook) {
@@ -97,11 +105,13 @@ export async function assertRulebookAccess(rulebookId: string, userId: string): 
   if (linkedSessions && linkedSessions.length > 0) {
     const sessionIds = linkedSessions.map((s: { session_id: string }) => s.session_id);
 
+    // 소프트 삭제된 참가자 제외
     const { data: participation } = await supabaseAdmin
       .from('session_participants')
       .select('id')
       .eq('user_id', userId)
       .in('session_id', sessionIds)
+      .is('deleted_at', null)
       .limit(1)
       .single();
 

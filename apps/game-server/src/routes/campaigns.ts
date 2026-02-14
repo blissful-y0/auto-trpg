@@ -68,10 +68,12 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const userId = req.user!.id;
 
+    // soft-delete 제외
     const { data: campaigns, error } = await supabaseAdmin
       .from('campaigns')
       .select('*')
       .eq('created_by', userId)
+      .is('deleted_at', null)
       .order('updated_at', { ascending: false });
 
     if (error) {
@@ -91,11 +93,12 @@ router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
     const { id } = req.params;
     const userId = req.user!.id;
 
-    // 캠페인 조회
+    // 캠페인 조회 (soft-delete 제외)
     const { data: campaign, error: campaignError } = await supabaseAdmin
       .from('campaigns')
       .select('*')
       .eq('id', id)
+      .is('deleted_at', null)
       .single();
 
     if (campaignError || !campaign) {
@@ -106,11 +109,12 @@ router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
       throw new AppError(403, '캠페인에 대한 접근 권한이 없습니다.');
     }
 
-    // 캠페인에 연결된 세션 목록
+    // 캠페인에 연결된 세션 목록 (soft-delete 제외)
     const { data: sessions } = await supabaseAdmin
       .from('game_sessions')
       .select('id, name, status, session_order, created_at, updated_at')
       .eq('campaign_id', id)
+      .is('deleted_at', null)
       .order('session_order', { ascending: true });
 
     res.json({
@@ -138,11 +142,12 @@ router.patch('/:id', async (req: Request, res: Response, next: NextFunction) => 
     const { id } = req.params;
     const userId = req.user!.id;
 
-    // 생성자 확인
+    // 생성자 확인 (soft-delete 제외)
     const { data: campaign } = await supabaseAdmin
       .from('campaigns')
       .select('created_by')
       .eq('id', id)
+      .is('deleted_at', null)
       .single();
 
     if (!campaign) {
@@ -167,10 +172,12 @@ router.patch('/:id', async (req: Request, res: Response, next: NextFunction) => 
     if (parsed.data.status !== undefined) payload.status = parsed.data.status;
     if (parsed.data.worldState !== undefined) payload.world_state = parsed.data.worldState;
 
+    // soft-delete된 캠페인에 대한 수정 방지
     const { data: updated, error } = await supabaseAdmin
       .from('campaigns')
       .update(payload)
       .eq('id', id)
+      .is('deleted_at', null)
       .select()
       .single();
 
@@ -191,11 +198,12 @@ router.post('/:id/sessions', async (req: Request, res: Response, next: NextFunct
     const { id: campaignId } = req.params;
     const userId = req.user!.id;
 
-    // 캠페인 조회 및 소유자 확인
+    // 캠페인 조회 및 소유자 확인 (soft-delete 제외)
     const { data: campaign } = await supabaseAdmin
       .from('campaigns')
       .select('*')
       .eq('id', campaignId)
+      .is('deleted_at', null)
       .single();
 
     if (!campaign) {
@@ -211,11 +219,12 @@ router.post('/:id/sessions', async (req: Request, res: Response, next: NextFunct
       throw new AppError(400, `요청 데이터가 올바르지 않습니다: ${parsed.error.message}`);
     }
 
-    // 이전 세션의 최대 순서 조회
+    // 이전 세션의 최대 순서 조회 (soft-delete 제외)
     const { data: lastSession } = await supabaseAdmin
       .from('game_sessions')
       .select('session_order, world_state')
       .eq('campaign_id', campaignId)
+      .is('deleted_at', null)
       .order('session_order', { ascending: false })
       .limit(1)
       .single();
@@ -257,19 +266,23 @@ router.post('/:id/sessions', async (req: Request, res: Response, next: NextFunct
 
     // 이전 세션의 캐릭터 복제 (active 상태만)
     if (lastSession) {
+      // soft-delete 제외
       const { data: prevSessionData } = await supabaseAdmin
         .from('game_sessions')
         .select('id')
         .eq('campaign_id', campaignId)
         .eq('session_order', nextOrder - 1)
+        .is('deleted_at', null)
         .single();
 
       if (prevSessionData) {
+        // soft-delete 제외
         const { data: prevCharacters } = await supabaseAdmin
           .from('characters')
           .select('*')
           .eq('session_id', prevSessionData.id)
-          .eq('status', 'active');
+          .eq('status', 'active')
+          .is('deleted_at', null);
 
         if (prevCharacters && prevCharacters.length > 0) {
           const newCharacters = prevCharacters.map(
@@ -310,11 +323,12 @@ router.put(
       const { id: campaignId, sessionId } = req.params;
       const userId = req.user!.id;
 
-      // 캠페인 소유자 확인
+      // 캠페인 소유자 확인 (soft-delete 제외)
       const { data: campaign } = await supabaseAdmin
         .from('campaigns')
         .select('created_by')
         .eq('id', campaignId)
+        .is('deleted_at', null)
         .single();
 
       if (!campaign) {
@@ -325,11 +339,12 @@ router.put(
         throw new AppError(403, '캠페인 생성자만 세션을 연결할 수 있습니다.');
       }
 
-      // 세션 소유자 확인
+      // 세션 소유자 확인 (soft-delete 제외)
       const { data: session } = await supabaseAdmin
         .from('game_sessions')
         .select('created_by, campaign_id')
         .eq('id', sessionId)
+        .is('deleted_at', null)
         .single();
 
       if (!session) {
@@ -344,18 +359,19 @@ router.put(
         throw new AppError(400, '이미 다른 캠페인에 연결된 세션입니다.');
       }
 
-      // 현재 캠페인의 최대 순서
+      // 현재 캠페인의 최대 순서 (soft-delete 제외)
       const { data: lastSession } = await supabaseAdmin
         .from('game_sessions')
         .select('session_order')
         .eq('campaign_id', campaignId)
+        .is('deleted_at', null)
         .order('session_order', { ascending: false })
         .limit(1)
         .single();
 
       const nextOrder = (lastSession?.session_order ?? 0) + 1;
 
-      // 세션 연결
+      // 세션 연결 (soft-delete된 세션 제외)
       const { error } = await supabaseAdmin
         .from('game_sessions')
         .update({
@@ -363,7 +379,8 @@ router.put(
           session_order: nextOrder,
           updated_at: new Date().toISOString(),
         })
-        .eq('id', sessionId);
+        .eq('id', sessionId)
+        .is('deleted_at', null);
 
       if (error) {
         throw new AppError(500, `세션 연결 실패: ${error.message}`);

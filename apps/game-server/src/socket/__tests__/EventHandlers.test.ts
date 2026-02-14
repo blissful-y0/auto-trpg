@@ -18,6 +18,8 @@ function createChainMock(singleResult: { data: unknown; error: unknown }) {
   const chain = {
     select: vi.fn().mockReturnThis(),
     eq: vi.fn().mockReturnThis(),
+    is: vi.fn().mockReturnThis(),
+    not: vi.fn().mockReturnThis(),
     single: vi.fn().mockResolvedValue(singleResult),
     insert: vi.fn().mockReturnValue({
       then: vi.fn((cb: (v: unknown) => void) => {
