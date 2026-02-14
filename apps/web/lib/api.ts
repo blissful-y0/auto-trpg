@@ -168,6 +168,21 @@ export const settingsApi = {
       method: 'POST',
       body: { provider, apiKey },
     }),
+  rotateApiKey: (provider: string, apiKey: string) =>
+    fetchApi<{ data: { rotation: { rotated: boolean; previousKeyHint: string | null } } }>(
+      `/api/keys/${provider}/rotate`,
+      {
+        method: 'POST',
+        body: { apiKey },
+      },
+    ),
+  rollbackApiKey: (provider: string) =>
+    fetchApi<{ data: { rotation: { rolledBack: boolean; restoredKeyHint: string | null } } }>(
+      `/api/keys/${provider}/rollback`,
+      {
+        method: 'POST',
+      },
+    ),
   deleteApiKey: (provider: string) =>
     fetchApi<{ message: string }>(`/api/keys/${provider}`, { method: 'DELETE' }),
   validateApiKey: (provider: string) =>
