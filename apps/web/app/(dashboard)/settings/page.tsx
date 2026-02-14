@@ -22,6 +22,7 @@ interface ApiKey {
   id: string;
   provider: string;
   hint: string;
+  previousKeyHint: string | null;
   addedAt: string;
   isValid: boolean | null;
   lastValidated: string | null;
@@ -96,6 +97,7 @@ function mapApiKeysFromBackend(keys: any[]): ApiKey[] {
     id: k.id,
     provider: providerToFrontend[k.provider] || k.provider,
     hint: k.key_hint || '***',
+    previousKeyHint: k.previous_key_hint || null,
     addedAt: k.created_at ? new Date(k.created_at).toLocaleDateString('ko-KR') : '-',
     isValid: k.is_valid ?? null,
     lastValidated: k.updated_at ? getRelativeTime(k.updated_at) : null,
@@ -109,6 +111,7 @@ export default function SettingsPage() {
   const [validating, setValidating] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [rollingBack, setRollingBack] = useState<string | null>(null);
   const [modelProvider, setModelProvider] = useState('anthropic');
   const [modelSource, setModelSource] = useState<'live' | 'static' | null>(null);
   const [providerModels, setProviderModels] = useState<ProviderModel[]>([]);
@@ -161,31 +164,65 @@ export default function SettingsPage() {
     void loadProviderModels(modelProvider, true);
   }, [modelProvider]);
 
-  const handleAddKey = async (provider: string) => {
-    const keyValue = newKeyValues[provider] || editKeyValue;
+  const handleSaveKey = async (provider: string) => {
+    const existingKey = getKeyForProvider(provider);
+    const keyValue = existingKey ? editKeyValue : newKeyValues[provider];
     if (!keyValue.trim()) return;
+
+    const isRotate = Boolean(existingKey);
 
     setSaving(true);
     try {
       const backendProvider = providerToBackend[provider] || provider;
-      const res = await settingsApi.addApiKey(backendProvider, keyValue);
+      const res = isRotate
+        ? await settingsApi.rotateApiKey(backendProvider, keyValue)
+        : await settingsApi.addApiKey(backendProvider, keyValue);
       const autoValidation = (res as any)?.data?.autoValidation;
       if (autoValidation?.isValid) {
-        toast.success('API 키가 등록되고 검증되었습니다');
+        toast.success(
+          isRotate ? 'API 키가 회전되고 검증되었습니다' : 'API 키가 등록되고 검증되었습니다',
+        );
       } else if (autoValidation && !autoValidation.isValid) {
-        toast.success('API 키가 등록되었습니다 (검증 실패 -- 키를 확인해주세요)');
+        toast.success(
+          isRotate
+            ? 'API 키가 회전되었지만 검증에 실패했습니다. 키를 확인해주세요'
+            : 'API 키가 등록되었습니다 (검증 실패 -- 키를 확인해주세요)',
+        );
       } else {
-        toast.success('API 키가 등록되었습니다');
+        toast.success(isRotate ? 'API 키가 회전되었습니다' : 'API 키가 등록되었습니다');
       }
-      setNewKeyValues((prev) => ({ ...prev, [provider]: '' }));
-      setEditingProvider(null);
-      setEditKeyValue('');
+      if (isRotate) {
+        setEditingProvider(null);
+        setEditKeyValue('');
+      } else {
+        setNewKeyValues((prev) => ({ ...prev, [provider]: '' }));
+      }
       await loadKeys();
     } catch (err: any) {
-      const msg = err.message || 'API 키 등록에 실패했습니다';
+      const msg = err.message || (isRotate ? 'API 키 회전에 실패했습니다' : 'API 키 등록에 실패했습니다');
       toast.error(msg);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleRollbackKey = async (key: ApiKey) => {
+    const backendProvider = providerToBackend[key.provider] || key.provider;
+    setRollingBack(key.id);
+    try {
+      const res = (await settingsApi.rollbackApiKey(backendProvider)) as any;
+      const restoredHint = res?.data?.rotation?.restoredKeyHint;
+      if (restoredHint) {
+        toast.success(`이전 키(${restoredHint})로 복원되었습니다`);
+      } else {
+        toast.success('이전 키로 복원되었습니다');
+      }
+      await loadKeys();
+    } catch (err: any) {
+      const msg = err.message || 'API 키 롤백에 실패했습니다';
+      toast.error(msg);
+    } finally {
+      setRollingBack(null);
     }
   };
 
@@ -341,6 +378,14 @@ export default function SettingsPage() {
                             </span>
                           </div>
                         )}
+                        {existingKey.previousKeyHint && (
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-text-tertiary">이전 키</span>
+                            <span className="text-xs font-mono text-text-secondary">
+                              {existingKey.previousKeyHint}
+                            </span>
+                          </div>
+                        )}
                       </div>
 
                       {/* 액션 버튼 */}
@@ -365,7 +410,7 @@ export default function SettingsPage() {
                           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-text-secondary hover:text-info hover:bg-bg-inset transition-colors"
                         >
                           <Edit3 size={14} />
-                          키 변경
+                          키 회전
                         </button>
                         <button
                           onClick={() => handleDeleteKey(existingKey)}
@@ -378,6 +423,18 @@ export default function SettingsPage() {
                             <Trash2 size={14} />
                           )}
                           삭제
+                        </button>
+                        <button
+                          onClick={() => handleRollbackKey(existingKey)}
+                          disabled={rollingBack === existingKey.id || !existingKey.previousKeyHint}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-text-secondary hover:text-gold hover:bg-bg-inset transition-colors disabled:opacity-50"
+                        >
+                          {rollingBack === existingKey.id ? (
+                            <Loader2 size={14} className="animate-spin" />
+                          ) : (
+                            <RefreshCw size={14} />
+                          )}
+                          이전 키로 롤백
                         </button>
                       </div>
                     </div>
@@ -396,7 +453,7 @@ export default function SettingsPage() {
                           autoFocus
                         />
                         <button
-                          onClick={() => handleAddKey(provider)}
+                          onClick={() => handleSaveKey(provider)}
                           disabled={!editKeyValue.trim() || saving}
                           className="btn-primary px-4 disabled:opacity-50 flex items-center gap-1.5 shrink-0"
                         >
@@ -405,7 +462,7 @@ export default function SettingsPage() {
                           ) : (
                             <RefreshCw size={14} />
                           )}
-                          변경
+                          회전
                         </button>
                         <button
                           onClick={() => {
@@ -439,7 +496,7 @@ export default function SettingsPage() {
                           className="input-field flex-1"
                         />
                         <button
-                          onClick={() => handleAddKey(provider)}
+                          onClick={() => handleSaveKey(provider)}
                           disabled={!(newKeyValues[provider] || '').trim() || saving}
                           className="btn-primary px-4 disabled:opacity-50 flex items-center gap-1.5 shrink-0"
                         >
