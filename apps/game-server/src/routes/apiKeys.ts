@@ -3,7 +3,12 @@ import { z } from 'zod';
 import { supabaseAdmin } from '../lib/supabase';
 import { encrypt, decrypt, createKeyHint } from '../lib/crypto';
 import { AppError } from '../middleware/errorHandler';
-import { listProviderModels, type ProviderModelCatalog } from '../services/llm/modelCatalog';
+import {
+  listProviderModels,
+  ModelCatalogError,
+  type ProviderModelCatalog,
+} from '../services/llm/modelCatalog';
+import { getRedisClient } from '../services/redis';
 import type { LLMProviderId } from '../services/llm/provider';
 
 const router = Router();
@@ -18,44 +23,204 @@ const providerParamSchema = z.object({
   provider: z.enum(['claude', 'openai', 'gemini']),
 });
 
+type ValidationResultCode = 'VALID' | 'INVALID_KEY' | 'SERVICE_UNAVAILABLE' | 'UNKNOWN';
+
+type ValidationResult = {
+  isValid: boolean;
+  message: string;
+  code: ValidationResultCode;
+};
+
+function classifyValidationError(error: unknown): ValidationResult {
+  const status =
+    (error as { status?: unknown; statusCode?: unknown; code?: unknown }).status ??
+    (error as { status?: unknown; statusCode?: unknown; code?: unknown }).statusCode;
+  const normalizedStatus = typeof status === 'string' ? Number.parseInt(status, 10) : status;
+  const errorCode = (error as { code?: unknown }).code;
+  const message = String((error as { message?: unknown }).message ?? '').toLowerCase();
+
+  const timeoutOrNetwork =
+    errorCode === 'ETIMEDOUT' ||
+    errorCode === 'ECONNRESET' ||
+    errorCode === 'ECONNREFUSED' ||
+    errorCode === 'ENOTFOUND' ||
+    errorCode === 'EAI_AGAIN' ||
+    errorCode === 'ENETUNREACH' ||
+    message.includes('timeout') ||
+    message.includes('network') ||
+    message.includes('connection');
+
+  if (
+    normalizedStatus === 401 ||
+    normalizedStatus === 403 ||
+    message.includes('invalid api key') ||
+    message.includes('invalid key') ||
+    message.includes('invalid_api_key') ||
+    message.includes('forbidden') ||
+    message.includes('unauthorized')
+  ) {
+    return {
+      isValid: false,
+      message: 'API 키가 유효하지 않습니다.',
+      code: 'INVALID_KEY',
+    };
+  }
+
+  if (
+    normalizedStatus === 429 ||
+    (typeof normalizedStatus === 'number' && normalizedStatus >= 500) ||
+    timeoutOrNetwork
+  ) {
+    return {
+      isValid: false,
+      message: 'API 키 검증 서비스에 일시적으로 연결할 수 없습니다.',
+      code: 'SERVICE_UNAVAILABLE',
+    };
+  }
+
+  return {
+    isValid: false,
+    message: 'API 키 검증 중 오류가 발생했습니다.',
+    code: 'UNKNOWN',
+  };
+}
+
 // 프로바이더별 API 키 간단 검증
 async function quickValidate(
-  provider: string,
+  provider: LLMProviderId,
   apiKey: string,
-): Promise<{ isValid: boolean; message: string }> {
+): Promise<ValidationResult> {
   try {
     if (provider === 'openai') {
       const { default: OpenAI } = await import('openai');
       const client = new OpenAI({ apiKey });
       await client.models.list();
-      return { isValid: true, message: 'API 키가 유효합니다.' };
+      return { isValid: true, message: 'API 키가 유효합니다.', code: 'VALID' };
     } else if (provider === 'claude') {
       const { default: Anthropic } = await import('@anthropic-ai/sdk');
       const client = new Anthropic({ apiKey });
-      await client.messages.create({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 1,
-        messages: [{ role: 'user', content: 'test' }],
-      });
-      return { isValid: true, message: 'API 키가 유효합니다.' };
+      await client.models.list();
+      return { isValid: true, message: 'API 키가 유효합니다.', code: 'VALID' };
     } else if (provider === 'gemini') {
       const { GoogleGenerativeAI } = await import('@google/generative-ai');
       const genAI = new GoogleGenerativeAI(apiKey);
       const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
       await model.generateContent('test');
-      return { isValid: true, message: 'API 키가 유효합니다.' };
+      return { isValid: true, message: 'API 키가 유효합니다.', code: 'VALID' };
     }
-    return { isValid: false, message: '지원하지 않는 프로바이더입니다.' };
-  } catch {
-    return { isValid: false, message: 'API 키가 유효하지 않습니다.' };
+    return { isValid: false, message: '지원하지 않는 프로바이더입니다.', code: 'INVALID_KEY' };
+  } catch (error) {
+    return classifyValidationError(error);
   }
 }
 
 const MODEL_LIST_CACHE_TTL_MS = 60_000;
 const modelListCache = new Map<string, { expiresAt: number; data: ProviderModelCatalog }>();
+const MODEL_LIST_CACHE_TTL_SECONDS = Math.max(1, Math.floor(MODEL_LIST_CACHE_TTL_MS / 1000));
+const MODEL_LIST_CACHE_KEY_PREFIX = 'api-keys:model-list';
+const isTestEnv = process.env.NODE_ENV === 'test';
+
+function redisCacheKey(userId: string, provider: LLMProviderId): string {
+  return `${MODEL_LIST_CACHE_KEY_PREFIX}:${userId}:${provider}`;
+}
 
 function cacheKey(userId: string, provider: LLMProviderId): string {
   return `${userId}:${provider}`;
+}
+
+function getMemoryCachedModelList(
+  userId: string,
+  provider: LLMProviderId,
+): ProviderModelCatalog | null {
+  const key = cacheKey(userId, provider);
+  const cached = modelListCache.get(key);
+
+  if (!cached) {
+    return null;
+  }
+
+  if (cached.expiresAt <= Date.now()) {
+    modelListCache.delete(key);
+    return null;
+  }
+
+  return cached.data;
+}
+
+function setMemoryModelListCache(
+  userId: string,
+  provider: LLMProviderId,
+  data: ProviderModelCatalog,
+): void {
+  modelListCache.set(cacheKey(userId, provider), {
+    expiresAt: Date.now() + MODEL_LIST_CACHE_TTL_MS,
+    data,
+  });
+}
+
+function deleteMemoryModelListCache(userId: string, provider: LLMProviderId): void {
+  modelListCache.delete(cacheKey(userId, provider));
+}
+
+async function getModelListCache(
+  userId: string,
+  provider: LLMProviderId,
+): Promise<ProviderModelCatalog | null> {
+  if (isTestEnv) {
+    return getMemoryCachedModelList(userId, provider);
+  }
+
+  try {
+    const client = getRedisClient();
+    const raw = await client.get(redisCacheKey(userId, provider));
+
+    if (!raw) {
+      return null;
+    }
+
+    try {
+      return JSON.parse(raw) as ProviderModelCatalog;
+    } catch {
+      await client.del(redisCacheKey(userId, provider));
+      return getMemoryCachedModelList(userId, provider);
+    }
+  } catch {
+    return getMemoryCachedModelList(userId, provider);
+  }
+}
+
+async function setModelListCache(
+  userId: string,
+  provider: LLMProviderId,
+  data: ProviderModelCatalog,
+): Promise<void> {
+  if (isTestEnv) {
+    setMemoryModelListCache(userId, provider, data);
+    return;
+  }
+
+  try {
+    const client = getRedisClient();
+    await client.set(redisCacheKey(userId, provider), JSON.stringify(data), 'EX', MODEL_LIST_CACHE_TTL_SECONDS);
+  } catch {
+    setMemoryModelListCache(userId, provider, data);
+    // fallback to memory cache only when Redis is unavailable
+  }
+}
+
+async function invalidateModelCache(userId: string, provider: LLMProviderId): Promise<void> {
+  deleteMemoryModelListCache(userId, provider);
+
+  if (isTestEnv) {
+    return;
+  }
+
+  try {
+    const client = getRedisClient();
+    await client.del(redisCacheKey(userId, provider));
+  } catch {
+    return;
+  }
 }
 
 // POST /api/keys — API 키 등록
@@ -71,13 +236,17 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
     const { provider, apiKey } = parsed.data;
 
     // 기존 키가 있으면 업데이트 (soft-delete 제외)
-    const { data: existing } = await supabaseAdmin
+    const { data: existing, error: fetchError } = await supabaseAdmin
       .from('user_api_keys')
       .select('id')
       .eq('user_id', userId)
       .eq('provider', provider)
       .is('deleted_at', null)
-      .single();
+      .maybeSingle();
+
+    if (fetchError) {
+      throw new AppError(500, `기존 키 조회 실패: ${fetchError.message}`);
+    }
 
     const encrypted = encrypt(apiKey);
     const keyHint = createKeyHint(apiKey);
@@ -124,8 +293,14 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
       statusCode = 201;
     }
 
+    await invalidateModelCache(userId, provider);
+
     // 등록 후 자동 검증
-    let autoValidation = { isValid: false, message: '자동 검증 실패' };
+    let autoValidation: ValidationResult = {
+      isValid: false,
+      message: '자동 검증 실패',
+      code: 'UNKNOWN',
+    };
     try {
       autoValidation = await quickValidate(provider, apiKey);
       await supabaseAdmin
@@ -177,33 +352,48 @@ router.get('/:provider/models', async (req: Request, res: Response, next: NextFu
     }
 
     const provider = parsed.data.provider;
-    const key = cacheKey(userId, provider);
-    const cached = modelListCache.get(key);
-    if (cached && cached.expiresAt > Date.now()) {
-      res.json({ data: cached.data });
+    const cached = await getModelListCache(userId, provider);
+    if (cached) {
+      res.json({ data: cached });
       return;
     }
 
     // soft-delete 제외
-    const { data: keyRecord } = await supabaseAdmin
+    const { data: keyRecord, error } = await supabaseAdmin
       .from('user_api_keys')
       .select('encrypted_key, iv, auth_tag')
       .eq('user_id', userId)
       .eq('provider', provider)
       .is('deleted_at', null)
-      .single();
+      .maybeSingle();
+
+    if (error) {
+      throw new AppError(500, `API 키 조회 실패: ${error.message}`);
+    }
 
     if (!keyRecord) {
       throw new AppError(404, `${provider} API 키가 등록되지 않았습니다.`);
     }
 
     const apiKey = decrypt(keyRecord.encrypted_key, keyRecord.iv, keyRecord.auth_tag);
-    const data = await listProviderModels(provider, apiKey);
+    let data: ProviderModelCatalog;
 
-    modelListCache.set(key, {
-      expiresAt: Date.now() + MODEL_LIST_CACHE_TTL_MS,
-      data,
-    });
+    try {
+      data = await listProviderModels(provider, apiKey);
+    } catch (error) {
+      if (error instanceof ModelCatalogError) {
+        if (error.code === 'INVALID_KEY') {
+          throw new AppError(401, error.message);
+        }
+        if (error.code === 'SERVICE_UNAVAILABLE' || error.code === 'UNKNOWN') {
+          throw new AppError(503, error.message);
+        }
+      }
+
+      throw new AppError(500, `${provider} 모델 목록 조회에 실패했습니다.`);
+    }
+
+    await setModelListCache(userId, provider, data);
 
     res.json({ data });
   } catch (err) {
@@ -215,19 +405,31 @@ router.get('/:provider/models', async (req: Request, res: Response, next: NextFu
 router.delete('/:provider', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const userId = req.user!.id;
-    const { provider } = req.params;
+    const parsed = providerParamSchema.safeParse(req.params);
+    if (!parsed.success) {
+      throw new AppError(400, `provider 파라미터가 올바르지 않습니다: ${parsed.error.message}`);
+    }
+
+    const provider = parsed.data.provider;
 
     // soft delete (이미 삭제된 키 제외)
-    const { error } = await supabaseAdmin
+    const { data: deleted, error } = await supabaseAdmin
       .from('user_api_keys')
       .update({ deleted_at: new Date().toISOString() })
       .eq('user_id', userId)
       .eq('provider', provider)
-      .is('deleted_at', null);
+      .is('deleted_at', null)
+      .select('id');
 
     if (error) {
       throw new AppError(500, `API 키 삭제 실패: ${error.message}`);
     }
+
+    if (!deleted || deleted.length === 0) {
+      throw new AppError(404, `${provider} API 키가 등록되지 않았습니다.`);
+    }
+
+    await invalidateModelCache(userId, provider);
 
     res.json({ message: `${provider} API 키가 삭제되었습니다.` });
   } catch (err) {
@@ -246,13 +448,17 @@ router.post('/:provider/validate', async (req: Request, res: Response, next: Nex
     const provider = parsed.data.provider;
 
     // 저장된 키 조회 (soft-delete 제외)
-    const { data: keyRecord } = await supabaseAdmin
+    const { data: keyRecord, error } = await supabaseAdmin
       .from('user_api_keys')
       .select('id, encrypted_key, iv, auth_tag')
       .eq('user_id', userId)
       .eq('provider', provider)
       .is('deleted_at', null)
-      .single();
+      .maybeSingle();
+
+    if (error) {
+      throw new AppError(500, `API 키 조회 실패: ${error.message}`);
+    }
 
     if (!keyRecord) {
       throw new AppError(404, `${provider} API 키가 등록되지 않았습니다.`);
@@ -260,13 +466,18 @@ router.post('/:provider/validate', async (req: Request, res: Response, next: Nex
 
     // 키 복호화 후 quickValidate로 검증
     const apiKey = decrypt(keyRecord.encrypted_key, keyRecord.iv, keyRecord.auth_tag);
-    const { isValid, message } = await quickValidate(provider, apiKey);
+    const { isValid, message, code } = await quickValidate(provider, apiKey);
 
     // 검증 결과 저장
     await supabaseAdmin.from('user_api_keys').update({ is_valid: isValid }).eq('id', keyRecord.id);
 
     res.json({
-      data: { provider, isValid, message },
+      data: {
+        provider,
+        isValid,
+        message,
+        code,
+      },
     });
   } catch (err) {
     next(err);
