@@ -358,13 +358,13 @@ router.post('/:provider/rotate', async (req: Request, res: Response, next: NextF
     }
 
     if (!currentRecord) {
-      throw new AppError(404, `${provider} API 키가 등록되지 않았습니다.`);
+      throw new AppError(404, `${provider} API 키가 등록되지 않았습니다.`, true, 'KEY_NOT_FOUND');
     }
 
     const autoValidation = await quickValidate(provider, apiKey);
     if (!autoValidation.isValid) {
       const status = autoValidation.code === 'SERVICE_UNAVAILABLE' ? 503 : 400;
-      throw new AppError(status, autoValidation.message);
+      throw new AppError(status, autoValidation.message, true, autoValidation.code);
     }
 
     const encrypted = encrypt(apiKey);
@@ -435,7 +435,7 @@ router.post('/:provider/rollback', async (req: Request, res: Response, next: Nex
     }
 
     if (!currentRecord) {
-      throw new AppError(404, `${provider} API 키가 등록되지 않았습니다.`);
+      throw new AppError(404, `${provider} API 키가 등록되지 않았습니다.`, true, 'KEY_NOT_FOUND');
     }
 
     if (
@@ -444,7 +444,7 @@ router.post('/:provider/rollback', async (req: Request, res: Response, next: Nex
       currentRecord.previous_auth_tag == null ||
       currentRecord.previous_key_hint == null
     ) {
-      throw new AppError(400, `롤백 가능한 이전 키가 없습니다.`);
+      throw new AppError(400, `롤백 가능한 이전 키가 없습니다.`, true, 'NO_PREVIOUS_KEY');
     }
 
     const { data: rolledBack, error: rollbackError } = await supabaseAdmin
@@ -539,7 +539,7 @@ router.get('/:provider/models', async (req: Request, res: Response, next: NextFu
     }
 
     if (!keyRecord) {
-      throw new AppError(404, `${provider} API 키가 등록되지 않았습니다.`);
+      throw new AppError(404, `${provider} API 키가 등록되지 않았습니다.`, true, 'KEY_NOT_FOUND');
     }
 
     const apiKey = decrypt(keyRecord.encrypted_key, keyRecord.iv, keyRecord.auth_tag);
@@ -550,14 +550,14 @@ router.get('/:provider/models', async (req: Request, res: Response, next: NextFu
     } catch (error) {
       if (error instanceof ModelCatalogError) {
         if (error.code === 'INVALID_KEY') {
-          throw new AppError(401, error.message);
+          throw new AppError(401, error.message, true, 'INVALID_KEY');
         }
         if (error.code === 'SERVICE_UNAVAILABLE' || error.code === 'UNKNOWN') {
-          throw new AppError(503, error.message);
+          throw new AppError(503, error.message, true, 'SERVICE_UNAVAILABLE');
         }
       }
 
-      throw new AppError(500, `${provider} 모델 목록 조회에 실패했습니다.`);
+      throw new AppError(500, `${provider} 모델 목록 조회에 실패했습니다.`, true, 'MODEL_LIST_ERROR');
     }
 
     await setModelListCache(userId, provider, data);
@@ -593,7 +593,7 @@ router.delete('/:provider', async (req: Request, res: Response, next: NextFuncti
     }
 
     if (!deleted || deleted.length === 0) {
-      throw new AppError(404, `${provider} API 키가 등록되지 않았습니다.`);
+      throw new AppError(404, `${provider} API 키가 등록되지 않았습니다.`, true, 'KEY_NOT_FOUND');
     }
 
     await invalidateModelCache(userId, provider);
@@ -628,7 +628,7 @@ router.post('/:provider/validate', async (req: Request, res: Response, next: Nex
     }
 
     if (!keyRecord) {
-      throw new AppError(404, `${provider} API 키가 등록되지 않았습니다.`);
+      throw new AppError(404, `${provider} API 키가 등록되지 않았습니다.`, true, 'KEY_NOT_FOUND');
     }
 
     // 키 복호화 후 quickValidate로 검증
